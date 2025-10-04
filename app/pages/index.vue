@@ -2,6 +2,7 @@
 import type { PageResult, Task } from '~/composables/useTaskApi'
 
 const { uploadTask, listTasks, startAnalysis, deleteTask } = useTaskApi()
+const { connect, disconnect, subscribeToTaskUpdates } = useWebSocket()
 const toast = useToast()
 
 // 页面状态
@@ -11,14 +12,13 @@ const tasks = ref<Task[]>([])
 const totalPages = ref(0)
 const currentPage = ref(0)
 const selectedStatus = ref<string>()
+let unsubscribeUpdates: (() => void) | null = null
 
 // 上传表单
 const uploadForm = ref({
   file: null as File | null,
   name: '',
-  timeoutRatio: '1:4',
-  confidenceThreshold: 0.5,
-  iouThreshold: 0.45
+  timeoutRatio: '1:4'
 })
 
 // 文件选择
@@ -47,15 +47,9 @@ const handleUpload = async () => {
 
   uploading.value = true
   try {
-    await uploadTask(
-      uploadForm.value.file,
-      uploadForm.value.name,
-      {
-        timeoutRatio: uploadForm.value.timeoutRatio,
-        confidenceThreshold: uploadForm.value.confidenceThreshold,
-        iouThreshold: uploadForm.value.iouThreshold
-      }
-    )
+    await uploadTask(uploadForm.value.file, uploadForm.value.name, {
+      timeoutRatio: uploadForm.value.timeoutRatio
+    })
 
     toast.add({ title: '任务创建成功', color: 'success' })
 
@@ -79,7 +73,11 @@ const handleUpload = async () => {
 const loadTasks = async () => {
   loading.value = true
   try {
-    const result: PageResult<Task> = await listTasks(currentPage.value, 20, selectedStatus.value)
+    const result: PageResult<Task> = await listTasks(
+      currentPage.value,
+      20,
+      selectedStatus.value
+    )
     tasks.value = result.items
     totalPages.value = result.totalPages
   } catch (error: unknown) {
@@ -103,11 +101,21 @@ const handleStartAnalysis = async (taskId: string) => {
 }
 
 // 删除任务
-const handleDelete = async (taskId: string) => {
+const isDeleteModalOpen = ref(false)
+const taskToDelete = ref<string>('')
+
+const confirmDelete = (taskId: string) => {
+  taskToDelete.value = taskId
+  isDeleteModalOpen.value = true
+}
+
+const handleDelete = async () => {
   try {
-    await deleteTask(taskId)
+    await deleteTask(taskToDelete.value)
     toast.add({ title: '删除成功', color: 'success' })
     await loadTasks()
+    isDeleteModalOpen.value = false
+    taskToDelete.value = ''
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '删除失败'
     toast.add({ title: '删除失败', description: errorMessage, color: 'error' })
@@ -126,8 +134,26 @@ const statusOptions = [
 ]
 
 // 状态颜色映射
-const getStatusColor = (status: string) => {
-  const colors: Record<string, string> = {
+const getStatusColor = (
+  status: string
+):
+  | 'neutral'
+  | 'primary'
+  | 'secondary'
+  | 'success'
+  | 'info'
+  | 'warning'
+  | 'error' => {
+  const colors: Record<
+    string,
+    | 'neutral'
+    | 'primary'
+    | 'secondary'
+    | 'success'
+    | 'info'
+    | 'warning'
+    | 'error'
+  > = {
     PENDING: 'neutral',
     PREPROCESSING: 'info',
     ANALYZING: 'primary',
@@ -163,9 +189,54 @@ watch(selectedStatus, () => {
   loadTasks()
 })
 
+// WebSocket任务更新回调
+const handleTaskUpdate = async (update: {
+  taskId: string
+  status: string
+  progress?: number
+}) => {
+  console.log('收到任务更新:', update)
+
+  // 更新列表中对应的任务状态
+  const taskIndex = tasks.value.findIndex(t => t.taskId === update.taskId)
+  if (taskIndex !== -1) {
+    tasks.value[taskIndex].status = update.status
+
+    // 如果任务状态变为完成，重新加载任务列表以获取完整的更新信息
+    if (
+      update.status === 'COMPLETED'
+      || update.status === 'COMPLETED_TIMEOUT'
+      || update.status === 'FAILED'
+    ) {
+      // 延迟一下再重新加载，确保后端数据已经完全更新
+      setTimeout(() => {
+        loadTasks()
+      }, 500)
+    }
+  }
+}
+
 // 页面加载时获取任务列表
-onMounted(() => {
-  loadTasks()
+onMounted(async () => {
+  await loadTasks()
+
+  // 连接WebSocket并订阅任务列表更新
+  try {
+    await connect()
+    unsubscribeUpdates = subscribeToTaskUpdates(handleTaskUpdate)
+    console.log('已订阅任务列表更新')
+  } catch (error) {
+    console.error('WebSocket连接失败:', error)
+    // WebSocket连接失败不影响基本功能，只是无法实时更新
+  }
+})
+
+// 清理
+onUnmounted(() => {
+  if (unsubscribeUpdates) {
+    unsubscribeUpdates()
+  }
+  disconnect()
 })
 
 // 页码变化
@@ -199,9 +270,7 @@ const handlePageChange = (page: number) => {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- 文件选择 -->
           <div>
-            <label class="block text-sm font-medium mb-2">
-              视频文件
-            </label>
+            <label class="block text-sm font-medium mb-2"> 视频文件 </label>
             <input
               ref="fileInput"
               type="file"
@@ -216,15 +285,13 @@ const handlePageChange = (page: number) => {
               block
               @click="selectFile"
             >
-              {{ selectedFileName || '选择视频文件' }}
+              {{ selectedFileName || "选择视频文件" }}
             </UButton>
           </div>
 
           <!-- 任务名称 -->
           <div>
-            <label class="block text-sm font-medium mb-2">
-              任务名称
-            </label>
+            <label class="block text-sm font-medium mb-2"> 任务名称 </label>
             <UInput
               v-model="uploadForm.name"
               placeholder="留空则使用文件名"
@@ -233,26 +300,10 @@ const handlePageChange = (page: number) => {
 
           <!-- 超时比例 -->
           <div>
-            <label class="block text-sm font-medium mb-2">
-              超时比例
-            </label>
+            <label class="block text-sm font-medium mb-2"> 超时比例 </label>
             <UInput
               v-model="uploadForm.timeoutRatio"
               placeholder="例如: 1:4"
-            />
-          </div>
-
-          <!-- 置信度阈值 -->
-          <div>
-            <label class="block text-sm font-medium mb-2">
-              置信度阈值
-            </label>
-            <UInput
-              v-model.number="uploadForm.confidenceThreshold"
-              type="number"
-              step="0.1"
-              min="0"
-              max="1"
             />
           </div>
         </div>
@@ -327,11 +378,13 @@ const handlePageChange = (page: number) => {
                 <p v-if="task.completedAt">
                   完成时间: {{ formatTime(task.completedAt) }}
                 </p>
-                <p>视频时长: {{ Math.floor(task.videoDuration / 60) }}分{{ task.videoDuration % 60 }}秒</p>
+                <p>
+                  视频时长: {{ Math.floor(task.videoDuration / 60) }}分{{
+                    task.videoDuration % 60
+                  }}秒
+                </p>
                 <p v-if="task.config">
-                  配置: 超时比例{{ task.config.timeoutRatio }},
-                  置信度{{ task.config.confidenceThreshold }},
-                  IoU{{ task.config.iouThreshold }}
+                  配置: 超时比例{{ task.config.timeoutRatio }}
                 </p>
                 <p
                   v-if="task.failureReason"
@@ -353,7 +406,10 @@ const handlePageChange = (page: number) => {
                 开始分析
               </UButton>
               <UButton
-                v-if="task.status === 'COMPLETED' || task.status === 'COMPLETED_TIMEOUT'"
+                v-if="
+                  task.status === 'COMPLETED'
+                    || task.status === 'COMPLETED_TIMEOUT'
+                "
                 :to="`/tasks/${task.taskId}`"
                 icon="i-lucide-bar-chart"
                 color="primary"
@@ -376,7 +432,7 @@ const handlePageChange = (page: number) => {
                 color="error"
                 variant="ghost"
                 size="sm"
-                @click="handleDelete(task.taskId)"
+                @click="confirmDelete(task.taskId)"
               >
                 删除
               </UButton>
@@ -413,5 +469,34 @@ const handlePageChange = (page: number) => {
         </div>
       </template>
     </UCard>
+
+    <!-- 删除确认模态框 -->
+    <UModal v-model:open="isDeleteModalOpen">
+      <template #content>
+        <div class="p-6">
+          <h3 class="text-lg font-semibold mb-4">
+            确认删除任务
+          </h3>
+          <p class="text-muted mb-6">
+            确定要删除这个任务吗？此操作不可撤销。
+          </p>
+          <div class="flex justify-end gap-2">
+            <UButton
+              color="neutral"
+              variant="outline"
+              @click="isDeleteModalOpen = false"
+            >
+              取消
+            </UButton>
+            <UButton
+              color="error"
+              @click="handleDelete"
+            >
+              删除
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

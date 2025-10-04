@@ -29,8 +29,7 @@ export const useApi = () => {
       }
 
       return response.data
-    }
-    catch (error: unknown) {
+    } catch (error: unknown) {
       console.error('API请求错误:', error)
       throw error
     }

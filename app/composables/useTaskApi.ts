@@ -22,6 +22,7 @@ export interface Task {
   preprocessingCompletedAt?: string
   completedAt?: string
   failureReason?: string
+  resultVideoPath?: string
 }
 
 export interface TaskStatus {
