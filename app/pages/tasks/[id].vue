@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import type { Task, TaskResult, TaskStatus } from '~/composables/useTaskApi'
+import type { Task, TaskResult, TaskStatus, TrackingObject } from '~/composables/useTaskApi'
 
 const route = useRoute()
-const { getTask, getTaskStatus, getTaskResult } = useTaskApi()
-const { connect, disconnect, subscribeToTask, subscribeToTaskDetailUpdate, isConnected } = useWebSocket()
+const { getTask, getTaskStatus, getTaskResult, reanalyzeTask } = useTaskApi()
+const {
+  connect,
+  disconnect,
+  subscribeToTask,
+  subscribeToTaskDetailUpdate,
+  isConnected
+} = useWebSocket()
 const toast = useToast()
 
 const taskId = route.params.id as string
@@ -11,8 +17,251 @@ const task = ref<Task>()
 const status = ref<TaskStatus>()
 const result = ref<TaskResult>()
 const loading = ref(true)
+const reanalyzing = ref(false)
 let unsubscribe: (() => void) | null = null
 let unsubscribeDetail: (() => void) | null = null
+
+// 追踪物体分类和分页
+const activeObjectTab = ref(0)
+const objectTabItems = [
+  { label: '已追踪物体', value: 0 },
+  { label: '未追踪物体', value: 1 }
+]
+const objectPageSize = 10
+const trackedPage = ref(1)
+const untrackedPage = ref(1)
+
+// 分类物体：ID >= 0 为已追踪，ID < 0 为未追踪
+const trackedObjects = computed(() => {
+  if (!result.value) return []
+  return result.value.trackingObjects.filter(
+    obj => parseInt(obj.objectId) >= 0
+  )
+})
+
+const untrackedObjects = computed(() => {
+  if (!result.value) return []
+  return result.value.trackingObjects.filter(
+    obj => parseInt(obj.objectId) < 0
+  )
+})
+
+// 分页后的数据
+const paginatedTrackedObjects = computed(() => {
+  const start = (trackedPage.value - 1) * objectPageSize
+  const end = start + objectPageSize
+  return trackedObjects.value.slice(start, end)
+})
+
+const paginatedUntrackedObjects = computed(() => {
+  const start = (untrackedPage.value - 1) * objectPageSize
+  const end = start + objectPageSize
+  return untrackedObjects.value.slice(start, end)
+})
+
+// 轨迹查看相关
+const trajectoryModalOpen = ref(false)
+const selectedObject = ref<TrackingObject | null>(null)
+const trajectoryCurrentIndex = ref(0)
+const trajectoryPlaying = ref(false)
+const trajectoryCanvas = ref<HTMLCanvasElement | null>(null)
+let trajectoryAnimationFrame: number | null = null
+
+const currentTrajectoryFrame = computed(() => {
+  if (!selectedObject.value?.trajectory?.[trajectoryCurrentIndex.value]) {
+    return 0
+  }
+  return selectedObject.value.trajectory[trajectoryCurrentIndex.value].frame
+})
+
+const currentTrajectoryPoint = computed(() => {
+  if (!selectedObject.value?.trajectory?.[trajectoryCurrentIndex.value]) {
+    return null
+  }
+  return selectedObject.value.trajectory[trajectoryCurrentIndex.value]
+})
+
+// 显示轨迹
+const showTrajectory = (obj: TrackingObject) => {
+  if (!obj.trajectory || obj.trajectory.length === 0) {
+    toast.add({
+      title: '无轨迹数据',
+      description: '该物体没有轨迹数据',
+      color: 'warning'
+    })
+    return
+  }
+
+  // 调试：打印轨迹数据
+  console.log('轨迹数据:', {
+    objectId: obj.objectId,
+    firstFrame: obj.firstFrame,
+    lastFrame: obj.lastFrame,
+    totalFrames: obj.lastFrame - obj.firstFrame,
+    trajectoryLength: obj.trajectory.length,
+    trajectory: obj.trajectory
+  })
+
+  selectedObject.value = obj
+  trajectoryCurrentIndex.value = 0
+  trajectoryPlaying.value = false
+  trajectoryModalOpen.value = true
+
+  // 等待 canvas 渲染后绘制
+  nextTick(() => {
+    updateTrajectoryCanvas()
+  })
+}
+
+// 绘制轨迹到 canvas
+const updateTrajectoryCanvas = () => {
+  if (!trajectoryCanvas.value || !selectedObject.value?.trajectory) return
+
+  const canvas = trajectoryCanvas.value
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // 清空画布
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  const trajectory = selectedObject.value.trajectory
+  const currentIndex = trajectoryCurrentIndex.value
+
+  // 确保索引有效
+  if (currentIndex >= trajectory.length) return
+
+  // 1. 绘制所有轨迹线（已过实线 + 未过虚线）
+  for (let i = 0; i < trajectory.length - 1; i++) {
+    const point1 = trajectory[i]
+    const point2 = trajectory[i + 1]
+    if (!point1 || !point2) continue
+
+    const [x1, y1, x2, y2] = point1.bbox
+    const [x3, y3, x4, y4] = point2.bbox
+    const center1X = (x1 + x2) / 2
+    const center1Y = (y1 + y2) / 2
+    const center2X = (x3 + x4) / 2
+    const center2Y = (y3 + y4) / 2
+
+    ctx.beginPath()
+    ctx.moveTo(center1X, center1Y)
+    ctx.lineTo(center2X, center2Y)
+
+    if (i < currentIndex) {
+      // 已经过的线：实线，蓝色
+      ctx.strokeStyle = 'rgba(100, 200, 255, 0.8)'
+      ctx.lineWidth = 2
+      ctx.setLineDash([]) // 实线
+    } else {
+      // 未经过的线：虚线，淡蓝色
+      ctx.strokeStyle = 'rgba(100, 200, 255, 0.3)'
+      ctx.lineWidth = 2
+      ctx.setLineDash([8, 4]) // 虚线
+    }
+    ctx.stroke()
+  }
+
+  // 重置虚线设置
+  ctx.setLineDash([])
+
+  // 2. 绘制所有轨迹点
+  for (let i = 0; i < trajectory.length; i++) {
+    const point = trajectory[i]
+    if (!point) continue
+
+    const [x1, y1, x2, y2] = point.bbox
+    const centerX = (x1 + x2) / 2
+    const centerY = (y1 + y2) / 2
+
+    // 绘制圆点
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, 6, 0, Math.PI * 2)
+
+    if (i <= currentIndex) {
+      // 已经过的点和当前点：实心点
+      ctx.fillStyle = i === currentIndex
+        ? 'rgba(255, 100, 100, 1)' // 当前点：红色
+        : 'rgba(100, 200, 255, 0.9)' // 已过点：蓝色
+      ctx.fill()
+    } else {
+      // 未经过的点：空心点
+      ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
+  }
+
+  // 3. 绘制当前边界框（高亮）
+  const currentPoint = trajectory[currentIndex]
+  if (!currentPoint) return
+
+  const [x1, y1, x2, y2] = currentPoint.bbox
+
+  ctx.strokeStyle = 'rgba(255, 100, 100, 1)'
+  ctx.lineWidth = 3
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
+
+  // 4. 绘制当前帧号和置信度标签
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+  ctx.fillRect(x1, y1 - 30, 280, 25)
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 1)'
+  ctx.font = '14px monospace'
+  ctx.fillText(
+    `Frame: ${currentPoint.frame} | Conf: ${currentPoint.confidence.toFixed(4)}`,
+    x1 + 5,
+    y1 - 10
+  )
+}
+
+// 播放/暂停轨迹动画
+const toggleTrajectoryPlayback = () => {
+  trajectoryPlaying.value = !trajectoryPlaying.value
+
+  if (trajectoryPlaying.value) {
+    playTrajectoryAnimation()
+  } else {
+    if (trajectoryAnimationFrame !== null) {
+      cancelAnimationFrame(trajectoryAnimationFrame)
+      trajectoryAnimationFrame = null
+    }
+  }
+}
+
+// 播放轨迹动画
+const playTrajectoryAnimation = () => {
+  if (
+    !trajectoryPlaying.value
+    || !selectedObject.value?.trajectory
+    || trajectoryCurrentIndex.value >= selectedObject.value.trajectory.length - 1
+  ) {
+    trajectoryPlaying.value = false
+    return
+  }
+
+  trajectoryCurrentIndex.value++
+  updateTrajectoryCanvas()
+
+  trajectoryAnimationFrame = requestAnimationFrame(() => {
+    setTimeout(playTrajectoryAnimation, 25) // ~30fps
+  })
+}
+
+// 重置轨迹动画
+const resetTrajectory = () => {
+  trajectoryPlaying.value = false
+  trajectoryCurrentIndex.value = 0
+  if (trajectoryAnimationFrame !== null) {
+    cancelAnimationFrame(trajectoryAnimationFrame)
+    trajectoryAnimationFrame = null
+  }
+  updateTrajectoryCanvas()
+}
+
+// 监听索引变化，更新画布
+watch(trajectoryCurrentIndex, () => {
+  updateTrajectoryCanvas()
+})
 
 // progress计算属性，值为status.progress * 100
 const progress = computed(() => (status.value?.progress ?? 0) * 100)
@@ -28,13 +277,13 @@ const eventTypeMap: Record<string, string> = {
   POOL_NOT_REACHED: '熔池未到边'
 }
 
-// 物体类别映射
+// 物体类别映射（对应后端ObjectCategory枚举和YOLO模型类别）
 const categoryMap: Record<string, string> = {
   POOL_NOT_REACHED: '熔池未到边',
-  ADHESION: '粘连物',
+  ADHESION: '电极粘连物',
   CROWN: '锭冠',
   GLOW: '辉光',
-  SIDE_ARC: '边弧',
+  SIDE_ARC: '边弧（侧弧）',
   CREEPING_ARC: '爬弧'
 }
 
@@ -154,11 +403,44 @@ const formatTime = (seconds?: number) => {
 }
 
 // 帧号转时间戳
-const frameToTime = (frame: number, fps = 30) => {
+const frameToTime = (frame: number, fps = 25) => {
   const seconds = frame / fps
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+// 重新分析任务
+const handleReanalyze = async () => {
+  if (
+    !confirm('确定要重新分析此任务吗？这将清除旧的分析结果并重新开始分析。')
+  ) {
+    return
+  }
+
+  reanalyzing.value = true
+  try {
+    await reanalyzeTask(taskId)
+    toast.add({
+      title: '操作成功',
+      description: '任务已重新开始分析',
+      color: 'success'
+    })
+
+    // 清空结果并重新加载状态
+    result.value = undefined
+    await loadStatus()
+  } catch (error: unknown) {
+    const errorMessage
+      = error instanceof Error ? error.message : '重新分析失败'
+    toast.add({
+      title: '操作失败',
+      description: errorMessage,
+      color: 'error'
+    })
+  } finally {
+    reanalyzing.value = false
+  }
 }
 
 // 初始化
@@ -179,13 +461,16 @@ onMounted(async () => {
     console.log('已订阅任务状态更新')
 
     // 订阅任务详情更新（如resultVideoPath更新）
-    unsubscribeDetail = subscribeToTaskDetailUpdate(taskId, async (updatedTask: Task) => {
-      console.log('收到任务详情更新:', updatedTask)
-      // 更新task对象
-      task.value = updatedTask
-      // 重新加载status，以清除"生成结果视频"的进度显示
-      await loadStatus()
-    })
+    unsubscribeDetail = subscribeToTaskDetailUpdate(
+      taskId,
+      async (updatedTask: Task) => {
+        console.log('收到任务详情更新:', updatedTask)
+        // 更新task对象
+        task.value = updatedTask
+        // 重新加载status，以清除"生成结果视频"的进度显示
+        await loadStatus()
+      }
+    )
     console.log('已订阅任务详情更新')
   } catch (error) {
     console.error('WebSocket连接失败:', error)
@@ -211,7 +496,7 @@ onUnmounted(() => {
 })
 
 // 选中的指标
-const selectedMetric = ref<'flickerFrequency' | 'poolArea' | 'poolPerimeter'>(
+const selectedMetric = ref<'brightness' | 'poolArea' | 'poolPerimeter'>(
   'poolArea'
 )
 
@@ -221,7 +506,7 @@ const chartViewMode = ref<'single' | 'multi'>('multi')
 // 指标选项
 const metricOptions = [
   { label: '熔池面积', value: 'poolArea' },
-  { label: '闪烁频率', value: 'flickerFrequency' },
+  { label: '熔池亮度', value: 'brightness' },
   { label: '熔池周长', value: 'poolPerimeter' }
 ]
 
@@ -323,11 +608,30 @@ const statsCards = computed(() => {
               >
                 <div class="flex items-center gap-1">
                   <span
-                    :class="isConnected ? 'w-1.5 h-1.5 bg-green-500 rounded-full' : 'w-1.5 h-1.5 bg-gray-400 rounded-full'"
+                    :class="
+                      isConnected
+                        ? 'w-1.5 h-1.5 bg-green-500 rounded-full'
+                        : 'w-1.5 h-1.5 bg-gray-400 rounded-full'
+                    "
                   />
-                  {{ isConnected ? 'WS已连接' : 'WS未连接' }}
+                  {{ isConnected ? "WS已连接" : "WS未连接" }}
                 </div>
               </UBadge>
+              <!-- 重新分析按钮 -->
+              <UButton
+                v-if="
+                  task.status === 'COMPLETED'
+                    || task.status === 'COMPLETED_TIMEOUT'
+                    || task.status === 'FAILED'
+                "
+                icon="i-lucide-refresh-cw"
+                color="primary"
+                variant="outline"
+                :loading="reanalyzing"
+                @click="handleReanalyze"
+              >
+                重新分析
+              </UButton>
             </div>
           </div>
         </template>
@@ -404,7 +708,9 @@ const statsCards = computed(() => {
       >
         <template #header>
           <h2 class="text-xl font-semibold">
-            {{ status.phase === '生成结果视频' ? '结果视频生成进度' : '处理进度' }}
+            {{
+              status.phase === "生成结果视频" ? "结果视频生成进度" : "处理进度"
+            }}
           </h2>
         </template>
 
@@ -414,7 +720,7 @@ const statsCards = computed(() => {
               <span class="text-sm font-medium">{{
                 status.phase || "处理中"
               }}</span>
-              <span class="text-sm font-medium">{{ progress || 0 }}%</span>
+              <span class="text-sm font-medium">{{ progress.toFixed(2) || 0 }}%</span>
             </div>
             <UProgress :model-value="progress || 0" />
           </div>
@@ -498,6 +804,117 @@ const statsCards = computed(() => {
           :events="result.anomalyEvents"
           :tracking-objects="result.trackingObjects"
         />
+      </UCard>
+
+      <!-- 全局频率分析（已完成） -->
+      <UCard v-if="result && result.globalAnalysis">
+        <template #header>
+          <h2 class="text-xl font-semibold">
+            全局频率分析
+          </h2>
+        </template>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- 闪烁频率 -->
+          <div
+            v-if="result.globalAnalysis['闪烁']"
+            class="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg border border-yellow-200 dark:border-yellow-800"
+          >
+            <div class="flex items-center gap-2 mb-2">
+              <UIcon
+                name="i-lucide-zap"
+                class="w-5 h-5 text-yellow-600 dark:text-yellow-400"
+              />
+              <h3 class="font-semibold text-yellow-900 dark:text-yellow-100">
+                闪烁频率
+              </h3>
+            </div>
+            <p class="text-2xl font-bold text-yellow-900 dark:text-yellow-100 mb-1">
+              {{ result.globalAnalysis['闪烁'].frequency?.toFixed(2) }} Hz
+            </p>
+            <p class="text-sm text-yellow-700 dark:text-yellow-300">
+              趋势: {{ result.globalAnalysis['闪烁'].trend || '-' }}
+            </p>
+            <p class="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+              平均亮度: {{ result.globalAnalysis['闪烁'].mean?.toFixed(1) || '-' }}
+            </p>
+          </div>
+
+          <!-- 面积频率 -->
+          <div
+            v-if="result.globalAnalysis['面积']"
+            class="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg border border-blue-200 dark:border-blue-800"
+          >
+            <div class="flex items-center gap-2 mb-2">
+              <UIcon
+                name="i-lucide-square"
+                class="w-5 h-5 text-blue-600 dark:text-blue-400"
+              />
+              <h3 class="font-semibold text-blue-900 dark:text-blue-100">
+                面积振荡
+              </h3>
+            </div>
+            <p class="text-2xl font-bold text-blue-900 dark:text-blue-100 mb-1">
+              {{ result.globalAnalysis['面积'].frequency?.toFixed(2) }} Hz
+            </p>
+            <p class="text-sm text-blue-700 dark:text-blue-300">
+              趋势: {{ result.globalAnalysis['面积'].trend || '-' }}
+            </p>
+            <p class="text-xs text-blue-600 dark:text-blue-400 mt-1">
+              平均值: {{ result.globalAnalysis['面积'].mean?.toFixed(0) || '-' }} px
+            </p>
+          </div>
+
+          <!-- 周长频率 -->
+          <div
+            v-if="result.globalAnalysis['周长']"
+            class="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg border border-green-200 dark:border-green-800"
+          >
+            <div class="flex items-center gap-2 mb-2">
+              <UIcon
+                name="i-lucide-git-commit-horizontal"
+                class="w-5 h-5 text-green-600 dark:text-green-400"
+              />
+              <h3 class="font-semibold text-green-900 dark:text-green-100">
+                周长振荡
+              </h3>
+            </div>
+            <p class="text-2xl font-bold text-green-900 dark:text-green-100 mb-1">
+              {{ result.globalAnalysis['周长'].frequency?.toFixed(2) }} Hz
+            </p>
+            <p class="text-sm text-green-700 dark:text-green-300">
+              趋势: {{ result.globalAnalysis['周长'].trend || '-' }}
+            </p>
+            <p class="text-xs text-green-600 dark:text-green-400 mt-1">
+              平均值: {{ result.globalAnalysis['周长'].mean?.toFixed(1) || '-' }} px
+            </p>
+          </div>
+
+          <!-- 圆度 -->
+          <div
+            v-if="result.globalAnalysis['圆度']"
+            class="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg border border-purple-200 dark:border-purple-800"
+          >
+            <div class="flex items-center gap-2 mb-2">
+              <UIcon
+                name="i-lucide-circle-dot"
+                class="w-5 h-5 text-purple-600 dark:text-purple-400"
+              />
+              <h3 class="font-semibold text-purple-900 dark:text-purple-100">
+                平均圆度
+              </h3>
+            </div>
+            <p class="text-2xl font-bold text-purple-900 dark:text-purple-100 mb-1">
+              {{ result.globalAnalysis['圆度'].mean?.toFixed(3) || '-' }}
+            </p>
+            <p class="text-sm text-purple-700 dark:text-purple-300">
+              形状稳定性指标
+            </p>
+            <p class="text-xs text-purple-600 dark:text-purple-400 mt-1">
+              基于净面积与外周长
+            </p>
+          </div>
+        </div>
       </UCard>
 
       <!-- 动态参数图表（已完成） -->
@@ -661,58 +1078,261 @@ const statsCards = computed(() => {
           </h2>
         </template>
 
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b">
-                <th class="text-left py-2">
-                  物体ID
-                </th>
-                <th class="text-left py-2">
-                  类别
-                </th>
-                <th class="text-left py-2">
-                  首帧
-                </th>
-                <th class="text-left py-2">
-                  末帧
-                </th>
-                <th class="text-left py-2">
-                  持续时间
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="obj in result.trackingObjects"
-                :key="obj.trackingId"
-                class="border-b last:border-0"
-              >
-                <td class="py-2">
-                  {{ obj.objectId }}
-                </td>
-                <td class="py-2">
-                  <UBadge
-                    color="info"
-                    size="sm"
-                  >
-                    {{ categoryMap[obj.category] || obj.category }}
-                  </UBadge>
-                </td>
-                <td class="py-2">
-                  {{ obj.firstFrame }} ({{ frameToTime(obj.firstFrame) }})
-                </td>
-                <td class="py-2">
-                  {{ obj.lastFrame }} ({{ frameToTime(obj.lastFrame) }})
-                </td>
-                <td class="py-2">
-                  {{ obj.lastFrame - obj.firstFrame }} 帧
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <!-- 分类标签页 -->
+        <UTabs
+          v-model="activeObjectTab"
+          :items="objectTabItems"
+          class="mb-4"
+        />
+
+        <!-- 已追踪物体表格 -->
+        <div
+          v-show="activeObjectTab === 0"
+          class="space-y-4"
+        >
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b">
+                  <th class="text-left py-2">
+                    物体ID
+                  </th>
+                  <th class="text-left py-2">
+                    类别
+                  </th>
+                  <th class="text-left py-2">
+                    首帧
+                  </th>
+                  <th class="text-left py-2">
+                    末帧
+                  </th>
+                  <th class="text-left py-2">
+                    持续时间
+                  </th>
+                  <th class="text-center py-2">
+                    操作
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="obj in paginatedTrackedObjects"
+                  :key="obj.trackingId"
+                  class="border-b last:border-0"
+                >
+                  <td class="py-2">
+                    <UBadge
+                      color="success"
+                      size="sm"
+                    >
+                      {{ obj.objectId }}
+                    </UBadge>
+                  </td>
+                  <td class="py-2">
+                    <UBadge
+                      color="info"
+                      size="sm"
+                    >
+                      {{ categoryMap[obj.category] || obj.category }}
+                    </UBadge>
+                  </td>
+                  <td class="py-2">
+                    {{ obj.firstFrame }} ({{ frameToTime(obj.firstFrame) }})
+                  </td>
+                  <td class="py-2">
+                    {{ obj.lastFrame }} ({{ frameToTime(obj.lastFrame) }})
+                  </td>
+                  <td class="py-2">
+                    {{ obj.lastFrame - obj.firstFrame }} 帧
+                  </td>
+                  <td class="py-2 text-center">
+                    <UButton
+                      icon="i-lucide-route"
+                      size="xs"
+                      color="primary"
+                      variant="soft"
+                      @click="showTrajectory(obj)"
+                    >
+                      轨迹查看
+                    </UButton>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 分页 -->
+          <div class="flex justify-center">
+            <UPagination
+              v-model:page="trackedPage"
+              :total="Math.ceil(trackedObjects.length / objectPageSize)"
+            />
+          </div>
+        </div>
+
+        <!-- 未追踪物体表格 -->
+        <div
+          v-show="activeObjectTab === 1"
+          class="space-y-4"
+        >
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b">
+                  <th class="text-left py-2">
+                    物体ID
+                  </th>
+                  <th class="text-left py-2">
+                    类别
+                  </th>
+                  <th class="text-left py-2">
+                    首帧
+                  </th>
+                  <th class="text-left py-2">
+                    末帧
+                  </th>
+                  <th class="text-left py-2">
+                    持续时间
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="obj in paginatedUntrackedObjects"
+                  :key="obj.trackingId"
+                  class="border-b last:border-0"
+                >
+                  <td class="py-2">
+                    <UBadge
+                      color="neutral"
+                      size="sm"
+                    >
+                      {{ obj.objectId }}
+                    </UBadge>
+                  </td>
+                  <td class="py-2">
+                    <UBadge
+                      color="info"
+                      size="sm"
+                    >
+                      {{ categoryMap[obj.category] || obj.category }}
+                    </UBadge>
+                  </td>
+                  <td class="py-2">
+                    {{ obj.firstFrame }} ({{ frameToTime(obj.firstFrame) }})
+                  </td>
+                  <td class="py-2">
+                    {{ obj.lastFrame }} ({{ frameToTime(obj.lastFrame) }})
+                  </td>
+                  <td class="py-2">
+                    {{ obj.lastFrame - obj.firstFrame }} 帧
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 分页 -->
+          <div class="flex justify-center">
+            <UPagination
+              v-model:page="untrackedPage"
+              :total="Math.ceil(untrackedObjects.length / objectPageSize)"
+            />
+          </div>
         </div>
       </UCard>
+
+      <!-- 轨迹查看弹窗 -->
+      <UModal
+        v-model:open="trajectoryModalOpen"
+        title="物体轨迹查看"
+        :description="`物体 ID: ${selectedObject?.objectId || ''} - ${selectedObject?.category ? (categoryMap[selectedObject.category] || selectedObject.category) : ''}`"
+        class="w-full max-w-7xl max-h-[90vh]"
+      >
+        <template #content>
+          <div
+            v-if="selectedObject"
+            class="space-y-4 p-6"
+          >
+            <!-- 信息 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <span class="text-muted">类别：</span>
+                <UBadge
+                  color="info"
+                  size="sm"
+                >
+                  {{
+                    categoryMap[selectedObject.category]
+                      || selectedObject.category
+                  }}
+                </UBadge>
+              </div>
+              <div>
+                <span class="text-muted">帧范围：</span>
+                {{ selectedObject.firstFrame }} - {{ selectedObject.lastFrame }}
+                (共 {{ selectedObject.lastFrame - selectedObject.firstFrame }} 帧)
+              </div>
+              <div>
+                <span class="text-muted">轨迹点数：</span>
+                <span class="font-semibold">{{ selectedObject?.trajectory?.length || 0 }}</span>
+              </div>
+              <div>
+                <span class="text-muted">当前：</span>
+                帧 {{ currentTrajectoryFrame }} |
+                置信度 {{ currentTrajectoryPoint?.confidence.toFixed(4) || "-" }}
+              </div>
+            </div>
+
+            <!-- 轨迹可视化画布 -->
+            <div class="relative bg-black rounded-lg overflow-hidden">
+              <canvas
+                ref="trajectoryCanvas"
+                class="w-full"
+                :width="1920"
+                :height="1080"
+              />
+            </div>
+
+            <!-- 播放控制 -->
+            <div class="space-y-3">
+              <div class="flex items-center gap-2">
+                <UButton
+                  :icon="
+                    trajectoryPlaying ? 'i-lucide-pause' : 'i-lucide-play'
+                  "
+                  size="sm"
+                  @click="toggleTrajectoryPlayback"
+                >
+                  {{ trajectoryPlaying ? "暂停" : "播放" }}
+                </UButton>
+                <UButton
+                  icon="i-lucide-skip-back"
+                  size="sm"
+                  variant="soft"
+                  @click="resetTrajectory"
+                >
+                  重置
+                </UButton>
+                <span class="text-sm text-muted ml-auto">
+                  {{ trajectoryCurrentIndex + 1 }} /
+                  {{ selectedObject?.trajectory?.length || 0 }}
+                </span>
+              </div>
+
+              <!-- 进度条 -->
+              <input
+                v-model.number="trajectoryCurrentIndex"
+                type="range"
+                :min="0"
+                :max="(selectedObject?.trajectory?.length || 1) - 1"
+                class="w-full"
+                @input="updateTrajectoryCanvas"
+              >
+            </div>
+          </div>
+        </template>
+      </UModal>
     </div>
 
     <!-- 错误状态 -->

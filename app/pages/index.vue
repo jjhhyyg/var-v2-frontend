@@ -267,9 +267,9 @@ const handlePageChange = (page: number) => {
       </template>
 
       <div class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <!-- 文件选择 -->
-          <div>
+          <div class="flex flex-col">
             <label class="block text-sm font-medium mb-2"> 视频文件 </label>
             <input
               ref="fileInput"
@@ -290,7 +290,7 @@ const handlePageChange = (page: number) => {
           </div>
 
           <!-- 任务名称 -->
-          <div>
+          <div class="flex flex-col">
             <label class="block text-sm font-medium mb-2"> 任务名称 </label>
             <UInput
               v-model="uploadForm.name"
@@ -299,7 +299,7 @@ const handlePageChange = (page: number) => {
           </div>
 
           <!-- 超时比例 -->
-          <div>
+          <div class="flex flex-col">
             <label class="block text-sm font-medium mb-2"> 超时比例 </label>
             <UInput
               v-model="uploadForm.timeoutRatio"
@@ -307,7 +307,10 @@ const handlePageChange = (page: number) => {
             />
           </div>
         </div>
-
+      </div>
+      <!-- 分割线 -->
+      <hr class="my-4">
+      <div class="mt-4 text-right">
         <UButton
           icon="i-lucide-send"
           :loading="uploading"

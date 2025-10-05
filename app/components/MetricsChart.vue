@@ -30,14 +30,14 @@ use([
 interface DynamicMetric {
   frameNumber: number
   timestamp: number
-  flickerFrequency?: number
+  brightness?: number
   poolArea?: number
   poolPerimeter?: number
 }
 
 interface Props {
   metrics: DynamicMetric[]
-  selectedMetric: 'flickerFrequency' | 'poolArea' | 'poolPerimeter'
+  selectedMetric: 'brightness' | 'poolArea' | 'poolPerimeter'
   height?: string
 }
 
@@ -52,10 +52,10 @@ interface TooltipParam {
 
 // 指标配置
 const metricConfig = {
-  flickerFrequency: {
-    name: '闪烁频率',
-    unit: 'Hz',
-    color: '#3b82f6'
+  brightness: {
+    name: '熔池亮度',
+    unit: '灰度值',
+    color: '#eab308'
   },
   poolArea: {
     name: '熔池面积',

@@ -61,6 +61,7 @@
         @click="onTimelineClick"
       >
         <!-- 进度条 -->
+
         <div
           class="timeline-progress"
           :style="{ width: progressPercentage + '%' }"
@@ -71,7 +72,9 @@
           v-for="event in events"
           :key="event.eventId"
           class="event-marker"
-          :style="{ left: getEventPosition(frameToTimestamp(event.startFrame)) + '%' }"
+          :style="{
+            left: getEventPosition(frameToTimestamp(event.startFrame)) + '%'
+          }"
           :title="getEventTooltip(event)"
           @click.stop="seekToEvent(event)"
         >
@@ -139,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 
 interface Event {
   eventId: string
@@ -193,8 +196,8 @@ const progressPercentage = computed(() => {
   return (currentTime.value / duration.value) * 100
 })
 
-// 视频帧率（假设30fps，实际应从视频元数据获取）
-const fps = ref(30)
+// 视频帧率（假设25fps，实际应从视频元数据获取）
+const fps = ref(25)
 
 // 帧号转时间戳
 const frameToTimestamp = (frame: number): number => {
@@ -214,15 +217,27 @@ const switchVideo = (type: 'original' | 'result') => {
 
   videoType.value = type
 
-  // 等待视频加载后恢复播放位置
-  setTimeout(() => {
+  // 需要在下一个tick中重新加载视频,因为src需要先更新
+  nextTick(() => {
     if (videoPlayer.value) {
-      videoPlayer.value.currentTime = currentPlayTime
-      if (wasPlaying) {
-        videoPlayer.value.play()
-      }
+      // 重新加载视频源
+      videoPlayer.value.load()
+
+      // 监听加载完成事件,恢复播放位置
+      videoPlayer.value.addEventListener(
+        'loadedmetadata',
+        () => {
+          if (videoPlayer.value) {
+            videoPlayer.value.currentTime = currentPlayTime
+            if (wasPlaying) {
+              videoPlayer.value.play()
+            }
+          }
+        },
+        { once: true }
+      )
     }
-  }, 100)
+  })
 }
 
 // 时间更新
@@ -272,19 +287,22 @@ const getObjectRangeWidth = (obj: TrackingObject): number => {
   const firstTimestamp = frameToTimestamp(obj.firstFrame)
   const lastTimestamp = frameToTimestamp(obj.lastFrame)
   const rangeDuration = lastTimestamp - firstTimestamp
-  return (rangeDuration / duration.value) * 100
+  const percentage = (rangeDuration / duration.value) * 100
+
+  // 如果firstFrame和lastFrame相同(单帧物体),设置最小宽度0.5%以确保可见
+  return percentage > 0 ? percentage : 0.5
 }
 
 // 获取事件样式类
 const getEventClass = (eventType: string): string => {
   const typeMap: Record<string, string> = {
-    POOL_NOT_EDGE: 'event-pool',
+    POOL_NOT_REACHED: 'event-pool',
     ADHESION_FORMED: 'event-adhesion',
     ADHESION_DROPPED: 'event-adhesion',
     CROWN_DROPPED: 'event-crown',
     GLOW: 'event-glow',
     SIDE_ARC: 'event-side-arc',
-    CLIMBING_ARC: 'event-climbing-arc'
+    CREEPING_ARC: 'event-creeping-arc'
   }
   return typeMap[eventType] || 'event-default'
 }
@@ -305,13 +323,13 @@ const getObjectClass = (category: string): string => {
 // 获取事件类型标签
 const getEventTypeLabel = (eventType: string): string => {
   const labelMap: Record<string, string> = {
-    POOL_NOT_EDGE: '熔池未到边',
-    ADHESION_FORMED: '粘连物形成',
-    ADHESION_DROPPED: '粘连物脱落',
+    POOL_NOT_REACHED: '熔池未到边',
+    ADHESION_FORMED: '电极形成粘连物',
+    ADHESION_DROPPED: '电极粘连物脱落',
     CROWN_DROPPED: '锭冠脱落',
     GLOW: '辉光',
     SIDE_ARC: '边弧（侧弧）',
-    CLIMBING_ARC: '爬弧'
+    CREEPING_ARC: '爬弧'
   }
   return labelMap[eventType] || eventType
 }
@@ -326,7 +344,7 @@ const getEventTooltip = (event: Event): string => {
 const getCategoryLabel = (category: string): string => {
   const categoryMap: Record<string, string> = {
     POOL_NOT_REACHED: '熔池未到边',
-    ADHESION: '粘连物',
+    ADHESION: '电极粘连物',
     CROWN: '锭冠',
     GLOW: '辉光',
     SIDE_ARC: '边弧（侧弧）',
@@ -348,8 +366,7 @@ const getObjectTooltip = (obj: TrackingObject): string => {
 // 跳转到事件时间点
 const seekToEvent = (event: Event) => {
   if (videoPlayer.value) {
-    const timestamp = frameToTimestamp(event.startFrame)
-    videoPlayer.value.currentTime = timestamp
+    videoPlayer.value.currentTime = frameToTimestamp(event.startFrame)
     if (!isPlaying.value) {
       videoPlayer.value.play()
     }
@@ -491,64 +508,71 @@ const onTimelineClick = (e: MouseEvent) => {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
+/* 事件标记颜色（根据后端BGR定义转换为RGB） */
 .event-pool {
-  background: #fadb14;
+  background: rgb(0, 100, 0); /* 深绿色 - 熔池未到边 */
 }
 
 .event-adhesion {
-  background: #f5222d;
+  background: rgb(255, 0, 0); /* 红色 - 粘连物 */
 }
 
 .event-crown {
-  background: #1890ff;
+  background: rgb(0, 0, 255); /* 蓝色 - 锭冠 */
 }
 
 .event-glow {
-  background: #52c41a;
+  background: rgb(0, 255, 255); /* 青色 - 辉光 */
 }
 
 .event-side-arc {
-  background: #722ed1;
+  background: rgb(128, 0, 128); /* 紫色 - 边弧（侧弧） */
 }
 
-.event-climbing-arc {
-  background: #fa8c16;
+.event-creeping-arc {
+  background: rgb(255, 165, 0); /* 橙色 - 爬弧 */
 }
 
 .event-default {
   background: #666;
 }
 
+/* 物体出现时间段颜色（与事件保持一致） */
 .object-range {
   position: absolute;
   top: 0;
   height: 100%;
-  opacity: 0.15;
+  opacity: 0.3;
   pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.object-range:hover {
+  opacity: 0.5;
 }
 
 .object-pool {
-  background: #fadb14;
+  background: rgb(0, 100, 0); /* 深绿色 - 熔池未到边 */
 }
 
 .object-adhesion {
-  background: #f5222d;
+  background: rgb(255, 0, 0); /* 红色 - 粘连物 */
 }
 
 .object-crown {
-  background: #1890ff;
+  background: rgb(0, 0, 255); /* 蓝色 - 锭冠 */
 }
 
 .object-glow {
-  background: #52c41a;
+  background: rgb(0, 255, 255); /* 青色 - 辉光 */
 }
 
 .object-side-arc {
-  background: #722ed1;
+  background: rgb(128, 0, 128); /* 紫色 - 边弧（侧弧） */
 }
 
 .object-creeping-arc {
-  background: #fa8c16;
+  background: rgb(255, 165, 0); /* 橙色 - 爬弧 */
 }
 
 .object-default {
@@ -605,11 +629,40 @@ const onTimelineClick = (e: MouseEvent) => {
   transform: translateX(4px);
 }
 
+/* 事件列表图标颜色（复用object-*类的颜色定义） */
 .event-icon {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.event-icon.event-pool {
+  background: rgb(0, 100, 0);
+}
+
+.event-icon.event-adhesion {
+  background: rgb(255, 0, 0);
+}
+
+.event-icon.event-crown {
+  background: rgb(0, 0, 255);
+}
+
+.event-icon.event-glow {
+  background: rgb(0, 255, 255);
+}
+
+.event-icon.event-side-arc {
+  background: rgb(128, 0, 128);
+}
+
+.event-icon.event-creeping-arc {
+  background: rgb(255, 165, 0);
+}
+
+.event-icon.event-default {
+  background: #666;
 }
 
 .event-info {

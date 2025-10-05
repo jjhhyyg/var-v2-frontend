@@ -28,7 +28,7 @@ use([
 interface DynamicMetric {
   frameNumber: number
   timestamp: number
-  flickerFrequency?: number
+  brightness?: number
   poolArea?: number
   poolPerimeter?: number
 }
@@ -61,10 +61,10 @@ const chartData = computed(() => {
   })
 
   // 提取各项指标数据
-  const flickerData = props.metrics.map((m) => {
-    const value = m.flickerFrequency
+  const brightnessData = props.metrics.map((m) => {
+    const value = m.brightness
     return value !== null && value !== undefined
-      ? Number(value.toFixed(2))
+      ? Number(value.toFixed(1))
       : null
   })
 
@@ -84,7 +84,7 @@ const chartData = computed(() => {
 
   return {
     xAxisData,
-    flickerData,
+    brightnessData,
     areaData,
     perimeterData
   }
@@ -92,7 +92,7 @@ const chartData = computed(() => {
 
 // ECharts 配置选项 - 多轴图表
 const option = computed<EChartsOption>(() => {
-  const { xAxisData, flickerData, areaData, perimeterData } = chartData.value
+  const { xAxisData, brightnessData, areaData, perimeterData } = chartData.value
 
   return {
     title: {
@@ -130,10 +130,10 @@ const option = computed<EChartsOption>(() => {
       }
     },
     legend: {
-      data: ['闪烁频率 (Hz)', '熔池面积 (像素)', '熔池周长 (像素)'],
+      data: ['熔池亮度 (灰度值)', '熔池面积 (像素)', '熔池周长 (像素)'],
       top: 40,
       selected: {
-        '闪烁频率 (Hz)': true,
+        '熔池亮度 (灰度值)': true,
         '熔池面积 (像素)': true,
         '熔池周长 (像素)': true
       }
@@ -192,15 +192,15 @@ const option = computed<EChartsOption>(() => {
     yAxis: [
       {
         type: 'value',
-        name: '闪烁频率 (Hz)',
+        name: '亮度 (灰度值)',
         position: 'left',
         axisLabel: {
-          formatter: '{value} Hz'
+          formatter: '{value}'
         },
         axisLine: {
           show: true,
           lineStyle: {
-            color: '#3b82f6'
+            color: '#eab308'
           }
         }
       },
@@ -237,19 +237,19 @@ const option = computed<EChartsOption>(() => {
     ],
     series: [
       {
-        name: '闪烁频率 (Hz)',
+        name: '熔池亮度 (灰度值)',
         type: 'line',
         yAxisIndex: 0,
         smooth: true,
         symbol: 'circle',
         symbolSize: 4,
         itemStyle: {
-          color: '#3b82f6'
+          color: '#eab308'
         },
         lineStyle: {
           width: 2
         },
-        data: flickerData
+        data: brightnessData
       },
       {
         name: '熔池面积 (像素)',
