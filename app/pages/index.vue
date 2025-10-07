@@ -18,7 +18,10 @@ let unsubscribeUpdates: (() => void) | null = null
 const uploadForm = ref({
   file: null as File | null,
   name: '',
-  timeoutRatio: '1:4'
+  timeoutRatio: '1:4',
+  enablePreprocessing: false,
+  preprocessingStrength: 'moderate',
+  preprocessingEnhancePool: true
 })
 
 // 文件选择
@@ -48,7 +51,10 @@ const handleUpload = async () => {
   uploading.value = true
   try {
     await uploadTask(uploadForm.value.file, uploadForm.value.name, {
-      timeoutRatio: uploadForm.value.timeoutRatio
+      timeoutRatio: uploadForm.value.timeoutRatio,
+      enablePreprocessing: uploadForm.value.enablePreprocessing,
+      preprocessingStrength: uploadForm.value.preprocessingStrength,
+      preprocessingEnhancePool: uploadForm.value.preprocessingEnhancePool
     })
 
     toast.add({ title: '任务创建成功', color: 'success' })
@@ -73,11 +79,7 @@ const handleUpload = async () => {
 const loadTasks = async () => {
   loading.value = true
   try {
-    const result: PageResult<Task> = await listTasks(
-      currentPage.value,
-      20,
-      selectedStatus.value
-    )
+    const result: PageResult<Task> = await listTasks(currentPage.value, 20, selectedStatus.value)
     tasks.value = result.items
     totalPages.value = result.totalPages
   } catch (error: unknown) {
@@ -123,7 +125,7 @@ const handleDelete = async () => {
 }
 
 // 状态筛选
-const statusOptions = [
+const statusOptions = ref([
   { label: '全部', value: undefined },
   { label: '等待中', value: 'PENDING' },
   { label: '预处理中', value: 'PREPROCESSING' },
@@ -131,29 +133,13 @@ const statusOptions = [
   { label: '已完成', value: 'COMPLETED' },
   { label: '已完成(超时)', value: 'COMPLETED_TIMEOUT' },
   { label: '失败', value: 'FAILED' }
-]
+])
 
 // 状态颜色映射
 const getStatusColor = (
   status: string
-):
-  | 'neutral'
-  | 'primary'
-  | 'secondary'
-  | 'success'
-  | 'info'
-  | 'warning'
-  | 'error' => {
-  const colors: Record<
-    string,
-    | 'neutral'
-    | 'primary'
-    | 'secondary'
-    | 'success'
-    | 'info'
-    | 'warning'
-    | 'error'
-  > = {
+): 'neutral' | 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error' => {
+  const colors: Record<string, 'neutral' | 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error'> = {
     PENDING: 'neutral',
     PREPROCESSING: 'info',
     ANALYZING: 'primary',
@@ -190,24 +176,16 @@ watch(selectedStatus, () => {
 })
 
 // WebSocket任务更新回调
-const handleTaskUpdate = async (update: {
-  taskId: string
-  status: string
-  progress?: number
-}) => {
+const handleTaskUpdate = async (update: { taskId: string, status: string, progress?: number }) => {
   console.log('收到任务更新:', update)
 
   // 更新列表中对应的任务状态
   const taskIndex = tasks.value.findIndex(t => t.taskId === update.taskId)
-  if (taskIndex !== -1) {
+  if (taskIndex !== -1 && tasks.value[taskIndex]) {
     tasks.value[taskIndex].status = update.status
 
     // 如果任务状态变为完成，重新加载任务列表以获取完整的更新信息
-    if (
-      update.status === 'COMPLETED'
-      || update.status === 'COMPLETED_TIMEOUT'
-      || update.status === 'FAILED'
-    ) {
+    if (update.status === 'COMPLETED' || update.status === 'COMPLETED_TIMEOUT' || update.status === 'FAILED') {
       // 延迟一下再重新加载，确保后端数据已经完全更新
       setTimeout(() => {
         loadTasks()
@@ -250,20 +228,14 @@ const handlePageChange = (page: number) => {
   <div class="container mx-auto p-6 max-w-7xl">
     <!-- 页面标题 -->
     <div class="mb-8">
-      <h1 class="text-3xl font-bold mb-2">
-        VAR熔池视频分析系统
-      </h1>
-      <p class="text-muted">
-        上传视频进行自动分析，检测异常事件和动态参数
-      </p>
+      <h1 class="text-3xl font-bold mb-2">VAR熔池视频分析系统</h1>
+      <p class="text-muted">上传视频进行自动分析，检测异常事件和动态参数</p>
     </div>
 
     <!-- 上传区域 -->
     <UCard class="mb-8">
       <template #header>
-        <h2 class="text-xl font-semibold">
-          上传视频
-        </h2>
+        <h2 class="text-xl font-semibold">上传视频</h2>
       </template>
 
       <div class="space-y-4">
@@ -277,46 +249,64 @@ const handlePageChange = (page: number) => {
               accept="video/mp4,video/avi,video/mov,video/x-matroska"
               class="hidden"
               @change="onFileChange"
-            >
-            <UButton
-              icon="i-lucide-upload"
-              color="neutral"
-              variant="outline"
-              block
-              @click="selectFile"
-            >
-              {{ selectedFileName || "选择视频文件" }}
+            />
+            <UButton icon="i-lucide-upload" color="neutral" variant="outline" block @click="selectFile">
+              {{ selectedFileName || '选择视频文件' }}
             </UButton>
           </div>
 
           <!-- 任务名称 -->
           <div class="flex flex-col">
             <label class="block text-sm font-medium mb-2"> 任务名称 </label>
-            <UInput
-              v-model="uploadForm.name"
-              placeholder="留空则使用文件名"
-            />
+            <UInput v-model="uploadForm.name" placeholder="留空则使用文件名" />
           </div>
 
           <!-- 超时比例 -->
           <div class="flex flex-col">
             <label class="block text-sm font-medium mb-2"> 超时比例 </label>
-            <UInput
-              v-model="uploadForm.timeoutRatio"
-              placeholder="例如: 1:4"
-            />
+            <UInput v-model="uploadForm.timeoutRatio" placeholder="例如: 1:4" />
+          </div>
+        </div>
+
+        <!-- 视频预处理选项 -->
+        <div class="mt-4 border-t pt-4">
+          <div class="flex items-center gap-2 mb-3">
+            <UCheckbox v-model="uploadForm.enablePreprocessing" />
+            <label class="text-sm font-medium cursor-pointer" @click="uploadForm.enablePreprocessing = !uploadForm.enablePreprocessing">
+              启用视频预处理
+            </label>
+          </div>
+
+          <div v-if="uploadForm.enablePreprocessing" class="grid grid-cols-1 md:grid-cols-2 gap-4 ml-6">
+            <!-- 预处理强度 -->
+            <div class="flex flex-col">
+              <label class="block text-sm font-medium mb-2"> 预处理强度 </label>
+              <USelect
+                v-model="uploadForm.preprocessingStrength"
+                :items="[
+                  { label: '轻度 (Mild)', value: 'mild' },
+                  { label: '中度 (Moderate)', value: 'moderate' },
+                  { label: '强度 (Strong)', value: 'strong' }
+                ]"
+                value-key="value"
+              />
+            </div>
+
+            <!-- 熔池增强 -->
+            <div class="flex flex-col">
+              <label class="block text-sm font-medium mb-2"> 熔池增强 </label>
+              <div class="flex items-center h-10">
+                <UCheckbox v-model="uploadForm.preprocessingEnhancePool" />
+                <label class="ml-2 text-sm">启用熔池特定增强</label>
+              </div>
+            </div>
           </div>
         </div>
       </div>
       <!-- 分割线 -->
-      <hr class="my-4">
+      <hr class="my-4" />
       <div class="mt-4 text-right">
-        <UButton
-          icon="i-lucide-send"
-          :loading="uploading"
-          :disabled="!uploadForm.file"
-          @click="handleUpload"
-        >
+        <UButton icon="i-lucide-send" :loading="uploading" :disabled="!uploadForm.file" @click="handleUpload">
           创建分析任务
         </UButton>
       </div>
@@ -326,9 +316,7 @@ const handlePageChange = (page: number) => {
     <UCard>
       <template #header>
         <div class="flex items-center justify-between">
-          <h2 class="text-xl font-semibold">
-            任务列表
-          </h2>
+          <h2 class="text-xl font-semibold">任务列表</h2>
           <USelect
             v-model="selectedStatus"
             :items="statusOptions"
@@ -339,26 +327,13 @@ const handlePageChange = (page: number) => {
       </template>
 
       <!-- 加载状态 -->
-      <div
-        v-if="loading"
-        class="text-center py-8"
-      >
-        <UIcon
-          name="i-lucide-loader-2"
-          class="animate-spin w-8 h-8 mx-auto"
-        />
+      <div v-if="loading" class="text-center py-8">
+        <UIcon name="i-lucide-loader-2" class="animate-spin w-8 h-8 mx-auto" />
       </div>
 
       <!-- 任务列表 -->
-      <div
-        v-else-if="tasks.length > 0"
-        class="space-y-4"
-      >
-        <div
-          v-for="task in tasks"
-          :key="task.taskId"
-          class="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
-        >
+      <div v-else-if="tasks.length > 0" class="space-y-4">
+        <div v-for="task in tasks" :key="task.taskId" class="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
           <div class="flex items-start justify-between">
             <div class="flex-1">
               <div class="flex items-center gap-3 mb-2">
@@ -368,33 +343,25 @@ const handlePageChange = (page: number) => {
                 <UBadge :color="getStatusColor(task.status)">
                   {{ getStatusText(task.status) }}
                 </UBadge>
-                <UBadge
-                  v-if="task.isTimeout"
-                  color="warning"
-                >
-                  超时
-                </UBadge>
+                <UBadge v-if="task.isTimeout" color="warning"> 超时 </UBadge>
               </div>
 
               <div class="text-sm text-muted space-y-1">
                 <p>创建时间: {{ formatTime(task.createdAt) }}</p>
-                <p v-if="task.completedAt">
-                  完成时间: {{ formatTime(task.completedAt) }}
-                </p>
-                <p>
-                  视频时长: {{ Math.floor(task.videoDuration / 60) }}分{{
-                    task.videoDuration % 60
-                  }}秒
-                </p>
-                <p v-if="task.config">
-                  配置: 超时比例{{ task.config.timeoutRatio }}
-                </p>
-                <p
-                  v-if="task.failureReason"
-                  class="text-red-500"
-                >
-                  失败原因: {{ task.failureReason }}
-                </p>
+                <p v-if="task.completedAt">完成时间: {{ formatTime(task.completedAt) }}</p>
+                <p>视频时长: {{ Math.floor(task.videoDuration / 60) }}分{{ task.videoDuration % 60 }}秒</p>
+                <div v-if="task.config" class="flex items-center gap-2 flex-wrap mt-2">
+                  <span class="text-muted">配置:</span>
+                  <UBadge color="neutral" size="xs">{{ task.config.timeoutRatio }}</UBadge>
+                  <UBadge color="neutral" size="xs">{{ task.config.modelVersion || 'yolov11n' }}</UBadge>
+                  <UBadge v-if="task.config.enablePreprocessing" color="primary" size="xs">
+                    预处理:{{ task.config.preprocessingStrength === 'mild' ? '轻度' : task.config.preprocessingStrength === 'moderate' ? '中度' : '强度' }}
+                  </UBadge>
+                  <UBadge v-if="task.config.enablePreprocessing && task.config.preprocessingEnhancePool" color="success" size="xs">
+                    熔池增强
+                  </UBadge>
+                </div>
+                <p v-if="task.failureReason" class="text-red-500">失败原因: {{ task.failureReason }}</p>
               </div>
             </div>
 
@@ -409,10 +376,7 @@ const handlePageChange = (page: number) => {
                 开始分析
               </UButton>
               <UButton
-                v-if="
-                  task.status === 'COMPLETED'
-                    || task.status === 'COMPLETED_TIMEOUT'
-                "
+                v-if="task.status === 'COMPLETED' || task.status === 'COMPLETED_TIMEOUT'"
                 :to="`/tasks/${task.taskId}`"
                 icon="i-lucide-bar-chart"
                 color="primary"
@@ -445,24 +409,13 @@ const handlePageChange = (page: number) => {
       </div>
 
       <!-- 空状态 -->
-      <div
-        v-else
-        class="text-center py-12"
-      >
-        <UIcon
-          name="i-lucide-inbox"
-          class="w-12 h-12 mx-auto text-muted mb-4"
-        />
-        <p class="text-muted">
-          暂无任务
-        </p>
+      <div v-else class="text-center py-12">
+        <UIcon name="i-lucide-inbox" class="w-12 h-12 mx-auto text-muted mb-4" />
+        <p class="text-muted">暂无任务</p>
       </div>
 
       <!-- 分页 -->
-      <template
-        v-if="totalPages > 1"
-        #footer
-      >
+      <template v-if="totalPages > 1" #footer>
         <div class="flex justify-center">
           <UPagination
             :model-value="currentPage + 1"
@@ -477,26 +430,11 @@ const handlePageChange = (page: number) => {
     <UModal v-model:open="isDeleteModalOpen">
       <template #content>
         <div class="p-6">
-          <h3 class="text-lg font-semibold mb-4">
-            确认删除任务
-          </h3>
-          <p class="text-muted mb-6">
-            确定要删除这个任务吗？此操作不可撤销。
-          </p>
+          <h3 class="text-lg font-semibold mb-4">确认删除任务</h3>
+          <p class="text-muted mb-6">确定要删除这个任务吗？此操作不可撤销。</p>
           <div class="flex justify-end gap-2">
-            <UButton
-              color="neutral"
-              variant="outline"
-              @click="isDeleteModalOpen = false"
-            >
-              取消
-            </UButton>
-            <UButton
-              color="error"
-              @click="handleDelete"
-            >
-              删除
-            </UButton>
+            <UButton color="neutral" variant="outline" @click="isDeleteModalOpen = false"> 取消 </UButton>
+            <UButton color="error" @click="handleDelete"> 删除 </UButton>
           </div>
         </div>
       </template>

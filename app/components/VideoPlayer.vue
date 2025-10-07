@@ -30,6 +30,13 @@
           原始视频
         </button>
         <button
+          v-if="hasPreprocessedVideo"
+          :class="['switch-btn', { active: videoType === 'preprocessed' }]"
+          @click="switchVideo('preprocessed')"
+        >
+          预处理视频
+        </button>
+        <button
           v-if="hasResultVideo"
           :class="['switch-btn', { active: videoType === 'result' }]"
           @click="switchVideo('result')"
@@ -39,9 +46,7 @@
         <span
           v-if="!hasResultVideo"
           class="no-result-hint"
-        >
-          结果视频生成中...
-        </span>
+        > 结果视频生成中... </span>
       </div>
 
       <!-- 当前时间显示 -->
@@ -166,6 +171,7 @@ interface Props {
   taskId: string
   videoDuration: number
   resultVideoPath?: string
+  preprocessedVideoPath?: string
   events?: Event[]
   trackingObjects?: TrackingObject[]
 }
@@ -177,7 +183,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const videoPlayer = ref<HTMLVideoElement>()
 const timeline = ref<HTMLDivElement>()
-const videoType = ref<'original' | 'result'>('original')
+const videoType = ref<'original' | 'preprocessed' | 'result'>('original')
 const currentTime = ref(0)
 const duration = ref(0)
 const isPlaying = ref(false)
@@ -186,6 +192,7 @@ const isPlaying = ref(false)
 const { baseURL } = useApi()
 
 const hasResultVideo = computed(() => !!props.resultVideoPath)
+const hasPreprocessedVideo = computed(() => !!props.preprocessedVideoPath)
 
 const currentVideoUrl = computed(() => {
   return `${baseURL}/api/videos/${props.taskId}/${videoType.value}`
@@ -209,8 +216,9 @@ const sortedEvents = computed(() => {
 })
 
 // 切换视频
-const switchVideo = (type: 'original' | 'result') => {
+const switchVideo = (type: 'original' | 'preprocessed' | 'result') => {
   if (type === 'result' && !hasResultVideo.value) return
+  if (type === 'preprocessed' && !hasPreprocessedVideo.value) return
 
   const currentPlayTime = currentTime.value
   const wasPlaying = isPlaying.value
@@ -261,9 +269,7 @@ const formatTime = (seconds: number): string => {
   const s = Math.floor(seconds % 60)
 
   if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s
-      .toString()
-      .padStart(2, '0')}`
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
   return `${m}:${s.toString().padStart(2, '0')}`
 }
@@ -382,10 +388,7 @@ const onTimelineClick = (e: MouseEvent) => {
   const percentage = x / rect.width
   const newTime = percentage * duration.value
 
-  videoPlayer.value.currentTime = Math.max(
-    0,
-    Math.min(newTime, duration.value)
-  )
+  videoPlayer.value.currentTime = Math.max(0, Math.min(newTime, duration.value))
 }
 </script>
 

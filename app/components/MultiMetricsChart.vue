@@ -63,23 +63,17 @@ const chartData = computed(() => {
   // 提取各项指标数据
   const brightnessData = props.metrics.map((m) => {
     const value = m.brightness
-    return value !== null && value !== undefined
-      ? Number(value.toFixed(1))
-      : null
+    return value !== null && value !== undefined ? Number(value.toFixed(1)) : null
   })
 
   const areaData = props.metrics.map((m) => {
     const value = m.poolArea
-    return value !== null && value !== undefined
-      ? Number(value.toFixed(0))
-      : null
+    return value !== null && value !== undefined ? Number(value.toFixed(0)) : null
   })
 
   const perimeterData = props.metrics.map((m) => {
     const value = m.poolPerimeter
-    return value !== null && value !== undefined
-      ? Number(value.toFixed(2))
-      : null
+    return value !== null && value !== undefined ? Number(value.toFixed(2)) : null
   })
 
   return {

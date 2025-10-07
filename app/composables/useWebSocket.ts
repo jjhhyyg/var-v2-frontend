@@ -5,7 +5,7 @@
 
 import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
-import type { TaskStatus } from './useTaskApi'
+import type { Task, TaskStatus } from './useTaskApi'
 
 interface WebSocketMessage {
   taskId: string
@@ -96,17 +96,14 @@ export const useWebSocket = () => {
     }
 
     const destination = `/topic/tasks/${taskId}/status`
-    const subscription = stompClient.value.subscribe(
-      destination,
-      (message: { body: string }) => {
-        try {
-          const status = JSON.parse(message.body) as TaskStatus
-          callback(status)
-        } catch (error) {
-          console.error('解析任务状态消息失败:', error)
-        }
+    const subscription = stompClient.value.subscribe(destination, (message: { body: string }) => {
+      try {
+        const status = JSON.parse(message.body) as TaskStatus
+        callback(status)
+      } catch (error) {
+        console.error('解析任务状态消息失败:', error)
       }
-    )
+    })
 
     subscriptions.set(`task-${taskId}`, subscription)
     console.log(`已订阅任务状态: ${taskId}`)
@@ -122,26 +119,21 @@ export const useWebSocket = () => {
   /**
    * 订阅所有任务列表更新
    */
-  const subscribeToTaskUpdates = (
-    callback: (message: WebSocketMessage) => void
-  ): (() => void) => {
+  const subscribeToTaskUpdates = (callback: (message: WebSocketMessage) => void): (() => void) => {
     if (!stompClient.value || !isConnected.value) {
       console.warn('WebSocket未连接，无法订阅')
       return () => {}
     }
 
     const destination = '/topic/tasks/updates'
-    const subscription = stompClient.value.subscribe(
-      destination,
-      (message: { body: string }) => {
-        try {
-          const update = JSON.parse(message.body) as WebSocketMessage
-          callback(update)
-        } catch (error) {
-          console.error('解析任务列表更新消息失败:', error)
-        }
+    const subscription = stompClient.value.subscribe(destination, (message: { body: string }) => {
+      try {
+        const update = JSON.parse(message.body) as WebSocketMessage
+        callback(update)
+      } catch (error) {
+        console.error('解析任务列表更新消息失败:', error)
       }
-    )
+    })
 
     subscriptions.set('task-updates', subscription)
     console.log('已订阅任务列表更新')
@@ -159,7 +151,7 @@ export const useWebSocket = () => {
    */
   const subscribeToTaskDetailUpdate = (
     taskId: string,
-    callback: (task: any) => void
+    callback: (task: Task) => void
   ): (() => void) => {
     if (!stompClient.value || !isConnected.value) {
       console.warn('WebSocket未连接，无法订阅')
@@ -167,17 +159,14 @@ export const useWebSocket = () => {
     }
 
     const destination = `/topic/tasks/${taskId}/update`
-    const subscription = stompClient.value.subscribe(
-      destination,
-      (message: { body: string }) => {
-        try {
-          const task = JSON.parse(message.body)
-          callback(task)
-        } catch (error) {
-          console.error('解析任务详情更新消息失败:', error)
-        }
+    const subscription = stompClient.value.subscribe(destination, (message: { body: string }) => {
+      try {
+        const task = JSON.parse(message.body)
+        callback(task)
+      } catch (error) {
+        console.error('解析任务详情更新消息失败:', error)
       }
-    )
+    })
 
     subscriptions.set(`task-detail-${taskId}`, subscription)
     console.log(`已订阅任务详情更新: ${taskId}`)

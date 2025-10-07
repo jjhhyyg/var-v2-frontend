@@ -2,12 +2,13 @@
  * API请求封装
  */
 
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'
+
 interface FetchOptions {
-  method?: string
+  method?: HttpMethod
   body?: FormData | Record<string, unknown>
   params?: Record<string, string | number>
   headers?: Record<string, string>
-  [key: string]: unknown
 }
 
 export const useApi = () => {

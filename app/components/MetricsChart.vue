@@ -83,17 +83,12 @@ const chartData = computed(() => {
 
   const seriesData = props.metrics.map((m) => {
     const value = m[props.selectedMetric]
-    return value !== null && value !== undefined
-      ? Number(value.toFixed(2))
-      : null
+    return value !== null && value !== undefined ? Number(value.toFixed(2)) : null
   })
 
   // 计算统计信息
   const validData = seriesData.filter(v => v !== null) as number[]
-  const average
-    = validData.length > 0
-      ? validData.reduce((a, b) => a + b, 0) / validData.length
-      : 0
+  const average = validData.length > 0 ? validData.reduce((a, b) => a + b, 0) / validData.length : 0
 
   return {
     xAxisData,

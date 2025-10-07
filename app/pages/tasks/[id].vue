@@ -3,13 +3,7 @@ import type { Task, TaskResult, TaskStatus, TrackingObject } from '~/composables
 
 const route = useRoute()
 const { getTask, getTaskStatus, getTaskResult, reanalyzeTask } = useTaskApi()
-const {
-  connect,
-  disconnect,
-  subscribeToTask,
-  subscribeToTaskDetailUpdate,
-  isConnected
-} = useWebSocket()
+const { connect, disconnect, subscribeToTask, subscribeToTaskDetailUpdate, isConnected } = useWebSocket()
 const toast = useToast()
 
 const taskId = route.params.id as string
@@ -34,16 +28,18 @@ const untrackedPage = ref(1)
 // 分类物体：ID >= 0 为已追踪，ID < 0 为未追踪
 const trackedObjects = computed(() => {
   if (!result.value) return []
-  return result.value.trackingObjects.filter(
-    obj => parseInt(obj.objectId) >= 0
-  )
+  return result.value.trackingObjects.filter((obj) => {
+    const id = typeof obj.objectId === 'string' ? parseInt(obj.objectId) : obj.objectId
+    return id >= 0
+  })
 })
 
 const untrackedObjects = computed(() => {
   if (!result.value) return []
-  return result.value.trackingObjects.filter(
-    obj => parseInt(obj.objectId) < 0
-  )
+  return result.value.trackingObjects.filter((obj) => {
+    const id = typeof obj.objectId === 'string' ? parseInt(obj.objectId) : obj.objectId
+    return id < 0
+  })
 })
 
 // 分页后的数据
@@ -71,7 +67,8 @@ const currentTrajectoryFrame = computed(() => {
   if (!selectedObject.value?.trajectory?.[trajectoryCurrentIndex.value]) {
     return 0
   }
-  return selectedObject.value.trajectory[trajectoryCurrentIndex.value].frame
+  const point = selectedObject.value.trajectory[trajectoryCurrentIndex.value]
+  return point?.frame ?? 0
 })
 
 const currentTrajectoryPoint = computed(() => {
@@ -179,9 +176,10 @@ const updateTrajectoryCanvas = () => {
 
     if (i <= currentIndex) {
       // 已经过的点和当前点：实心点
-      ctx.fillStyle = i === currentIndex
-        ? 'rgba(255, 100, 100, 1)' // 当前点：红色
-        : 'rgba(100, 200, 255, 0.9)' // 已过点：蓝色
+      ctx.fillStyle =
+        i === currentIndex
+          ? 'rgba(255, 100, 100, 1)' // 当前点：红色
+          : 'rgba(100, 200, 255, 0.9)' // 已过点：蓝色
       ctx.fill()
     } else {
       // 未经过的点：空心点
@@ -207,11 +205,7 @@ const updateTrajectoryCanvas = () => {
 
   ctx.fillStyle = 'rgba(255, 255, 255, 1)'
   ctx.font = '14px monospace'
-  ctx.fillText(
-    `Frame: ${currentPoint.frame} | Conf: ${currentPoint.confidence.toFixed(4)}`,
-    x1 + 5,
-    y1 - 10
-  )
+  ctx.fillText(`Frame: ${currentPoint.frame} | Conf: ${currentPoint.confidence.toFixed(4)}`, x1 + 5, y1 - 10)
 }
 
 // 播放/暂停轨迹动画
@@ -231,9 +225,9 @@ const toggleTrajectoryPlayback = () => {
 // 播放轨迹动画
 const playTrajectoryAnimation = () => {
   if (
-    !trajectoryPlaying.value
-    || !selectedObject.value?.trajectory
-    || trajectoryCurrentIndex.value >= selectedObject.value.trajectory.length - 1
+    !trajectoryPlaying.value ||
+    !selectedObject.value?.trajectory ||
+    trajectoryCurrentIndex.value >= selectedObject.value.trajectory.length - 1
   ) {
     trajectoryPlaying.value = false
     return
@@ -265,6 +259,17 @@ watch(trajectoryCurrentIndex, () => {
 
 // progress计算属性，值为status.progress * 100
 const progress = computed(() => (status.value?.progress ?? 0) * 100)
+
+// 计算分析耗时（基于开始时间和完成时间）
+const calculatedAnalyzingDuration = computed(() => {
+  if (!task.value?.startedAt || !task.value?.completedAt) {
+    return null
+  }
+  const startTime = new Date(task.value.startedAt).getTime()
+  const endTime = new Date(task.value.completedAt).getTime()
+  const durationMs = endTime - startTime
+  return Math.floor(durationMs / 1000) // 转换为秒
+})
 
 // 事件类型映射
 const eventTypeMap: Record<string, string> = {
@@ -303,10 +308,7 @@ const loadStatus = async () => {
     status.value = await getTaskStatus(taskId)
 
     // 如果任务已完成，加载结果
-    if (
-      status.value.status === 'COMPLETED'
-      || status.value.status === 'COMPLETED_TIMEOUT'
-    ) {
+    if (status.value.status === 'COMPLETED' || status.value.status === 'COMPLETED_TIMEOUT') {
       await loadResult()
     }
   } catch (error: unknown) {
@@ -319,8 +321,7 @@ const loadResult = async () => {
   try {
     result.value = await getTaskResult(taskId)
   } catch (error: unknown) {
-    const errorMessage
-      = error instanceof Error ? error.message : '加载结果失败'
+    const errorMessage = error instanceof Error ? error.message : '加载结果失败'
     toast.add({
       title: '加载结果失败',
       description: errorMessage,
@@ -340,10 +341,7 @@ const handleStatusUpdate = async (newStatus: TaskStatus) => {
   }
 
   // 如果任务已完成，加载结果并重新加载完整任务信息
-  if (
-    newStatus.status === 'COMPLETED'
-    || newStatus.status === 'COMPLETED_TIMEOUT'
-  ) {
+  if (newStatus.status === 'COMPLETED' || newStatus.status === 'COMPLETED_TIMEOUT') {
     await loadResult()
     // 重新加载完整任务信息以确保所有字段都是最新的
     await loadTask()
@@ -353,24 +351,8 @@ const handleStatusUpdate = async (newStatus: TaskStatus) => {
 // 状态颜色
 const getStatusColor = (
   statusStr: string
-):
-  | 'error'
-  | 'info'
-  | 'success'
-  | 'primary'
-  | 'secondary'
-  | 'warning'
-  | 'neutral' => {
-  const colors: Record<
-    string,
-    | 'error'
-    | 'info'
-    | 'success'
-    | 'primary'
-    | 'secondary'
-    | 'warning'
-    | 'neutral'
-  > = {
+): 'error' | 'info' | 'success' | 'primary' | 'secondary' | 'warning' | 'neutral' => {
+  const colors: Record<string, 'error' | 'info' | 'success' | 'primary' | 'secondary' | 'warning' | 'neutral'> = {
     PENDING: 'neutral',
     PREPROCESSING: 'info',
     ANALYZING: 'primary',
@@ -412,9 +394,7 @@ const frameToTime = (frame: number, fps = 25) => {
 
 // 重新分析任务
 const handleReanalyze = async () => {
-  if (
-    !confirm('确定要重新分析此任务吗？这将清除旧的分析结果并重新开始分析。')
-  ) {
+  if (!confirm('确定要重新分析此任务吗？这将清除旧的分析结果并重新开始分析。')) {
     return
   }
 
@@ -427,12 +407,12 @@ const handleReanalyze = async () => {
       color: 'success'
     })
 
-    // 清空结果并重新加载状态
+    // 清空结果并重新加载任务和状态
     result.value = undefined
+    await loadTask()
     await loadStatus()
   } catch (error: unknown) {
-    const errorMessage
-      = error instanceof Error ? error.message : '重新分析失败'
+    const errorMessage = error instanceof Error ? error.message : '重新分析失败'
     toast.add({
       title: '操作失败',
       description: errorMessage,
@@ -461,16 +441,13 @@ onMounted(async () => {
     console.log('已订阅任务状态更新')
 
     // 订阅任务详情更新（如resultVideoPath更新）
-    unsubscribeDetail = subscribeToTaskDetailUpdate(
-      taskId,
-      async (updatedTask: Task) => {
-        console.log('收到任务详情更新:', updatedTask)
-        // 更新task对象
-        task.value = updatedTask
-        // 重新加载status，以清除"生成结果视频"的进度显示
-        await loadStatus()
-      }
-    )
+    unsubscribeDetail = subscribeToTaskDetailUpdate(taskId, async (updatedTask: Task) => {
+      console.log('收到任务详情更新:', updatedTask)
+      // 更新task对象
+      task.value = updatedTask
+      // 重新加载status，以清除"生成结果视频"的进度显示
+      await loadStatus()
+    })
     console.log('已订阅任务详情更新')
   } catch (error) {
     console.error('WebSocket连接失败:', error)
@@ -496,25 +473,23 @@ onUnmounted(() => {
 })
 
 // 选中的指标
-const selectedMetric = ref<'brightness' | 'poolArea' | 'poolPerimeter'>(
-  'poolArea'
-)
+const selectedMetric = ref<'brightness' | 'poolArea' | 'poolPerimeter'>('poolArea')
 
 // 图表视图模式：single 单个指标，multi 综合对比
 const chartViewMode = ref<'single' | 'multi'>('multi')
 
 // 指标选项
-const metricOptions = [
+const metricOptions = ref([
   { label: '熔池面积', value: 'poolArea' },
   { label: '熔池亮度', value: 'brightness' },
   { label: '熔池周长', value: 'poolPerimeter' }
-]
+])
 
 // 视图模式选项
-const viewModeOptions = [
+const viewModeOptions = ref([
   { label: '综合对比', value: 'multi' },
   { label: '单项指标', value: 'single' }
-]
+])
 
 // 统计卡片数据
 const statsCards = computed(() => {
@@ -547,35 +522,17 @@ const statsCards = computed(() => {
   <div class="container mx-auto p-6 max-w-7xl">
     <!-- 返回按钮 -->
     <div class="mb-6">
-      <UButton
-        to="/"
-        icon="i-lucide-arrow-left"
-        variant="ghost"
-        color="neutral"
-      >
-        返回任务列表
-      </UButton>
+      <UButton to="/" icon="i-lucide-arrow-left" variant="ghost" color="neutral"> 返回任务列表 </UButton>
     </div>
 
     <!-- 加载状态 -->
-    <div
-      v-if="loading"
-      class="text-center py-12"
-    >
-      <UIcon
-        name="i-lucide-loader-2"
-        class="animate-spin w-12 h-12 mx-auto mb-4"
-      />
-      <p class="text-muted">
-        加载中...
-      </p>
+    <div v-if="loading" class="text-center py-12">
+      <UIcon name="i-lucide-loader-2" class="animate-spin w-12 h-12 mx-auto mb-4" />
+      <p class="text-muted">加载中...</p>
     </div>
 
     <!-- 任务详情 -->
-    <div
-      v-else-if="task"
-      class="space-y-6"
-    >
+    <div v-else-if="task" class="space-y-6">
       <!-- 任务信息 -->
       <UCard>
         <template #header>
@@ -584,46 +541,26 @@ const statsCards = computed(() => {
               <h1 class="text-2xl font-bold">
                 {{ task.name }}
               </h1>
-              <p class="text-sm text-muted mt-1">
-                任务ID: {{ task.taskId }}
-              </p>
+              <p class="text-sm text-muted mt-1">任务ID: {{ task.taskId }}</p>
             </div>
             <div class="flex items-center gap-2">
-              <UBadge
-                :color="getStatusColor(task.status)"
-                size="lg"
-              >
+              <UBadge :color="getStatusColor(task.status)" size="lg">
                 {{ getStatusText(task.status) }}
               </UBadge>
-              <UBadge
-                v-if="task.isTimeout"
-                color="warning"
-                size="lg"
-              >
-                超时
-              </UBadge>
-              <UBadge
-                :color="isConnected ? 'success' : 'neutral'"
-                size="sm"
-              >
+              <UBadge v-if="task.isTimeout" color="warning" size="lg"> 超时 </UBadge>
+              <UBadge :color="isConnected ? 'success' : 'neutral'" size="sm">
                 <div class="flex items-center gap-1">
                   <span
                     :class="
-                      isConnected
-                        ? 'w-1.5 h-1.5 bg-green-500 rounded-full'
-                        : 'w-1.5 h-1.5 bg-gray-400 rounded-full'
+                      isConnected ? 'w-1.5 h-1.5 bg-green-500 rounded-full' : 'w-1.5 h-1.5 bg-gray-400 rounded-full'
                     "
                   />
-                  {{ isConnected ? "WS已连接" : "WS未连接" }}
+                  {{ isConnected ? 'WS已连接' : 'WS未连接' }}
                 </div>
               </UBadge>
               <!-- 重新分析按钮 -->
               <UButton
-                v-if="
-                  task.status === 'COMPLETED'
-                    || task.status === 'COMPLETED_TIMEOUT'
-                    || task.status === 'FAILED'
-                "
+                v-if="task.status === 'COMPLETED' || task.status === 'COMPLETED_TIMEOUT' || task.status === 'FAILED'"
                 icon="i-lucide-refresh-cw"
                 color="primary"
                 variant="outline"
@@ -638,88 +575,101 @@ const statsCards = computed(() => {
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
-            <p class="text-sm text-muted">
-              视频时长
-            </p>
+            <p class="text-sm text-muted">视频时长</p>
             <p class="text-lg font-semibold">
               {{ formatTime(task.videoDuration) }}
             </p>
           </div>
           <div>
-            <p class="text-sm text-muted">
-              超时阈值
-            </p>
+            <p class="text-sm text-muted">超时阈值</p>
             <p class="text-lg font-semibold">
               {{ formatTime(task.timeoutThreshold) }}
             </p>
           </div>
           <div>
-            <p class="text-sm text-muted">
-              创建时间
-            </p>
+            <p class="text-sm text-muted">创建时间</p>
             <p class="text-lg font-semibold">
-              {{ new Date(task.createdAt).toLocaleString("zh-CN") }}
+              {{ new Date(task.createdAt).toLocaleString('zh-CN') }}
             </p>
           </div>
           <div v-if="task.startedAt">
-            <p class="text-sm text-muted">
-              开始时间
-            </p>
+            <p class="text-sm text-muted">开始时间</p>
             <p class="text-lg font-semibold">
-              {{ new Date(task.startedAt).toLocaleString("zh-CN") }}
+              {{ new Date(task.startedAt).toLocaleString('zh-CN') }}
             </p>
           </div>
           <div v-if="task.completedAt">
-            <p class="text-sm text-muted">
-              完成时间
-            </p>
+            <p class="text-sm text-muted">完成时间</p>
             <p class="text-lg font-semibold">
-              {{ new Date(task.completedAt).toLocaleString("zh-CN") }}
+              {{ new Date(task.completedAt).toLocaleString('zh-CN') }}
             </p>
           </div>
-          <div v-if="task.config">
-            <p class="text-sm text-muted">
-              配置
+          <div v-if="calculatedAnalyzingDuration">
+            <p class="text-sm text-muted">分析总耗时</p>
+            <p class="text-lg font-semibold">
+              {{ formatTime(calculatedAnalyzingDuration) }}
             </p>
-            <p class="text-sm">
-              超时比例: {{ task.config.timeoutRatio }}
-            </p>
+          </div>
+          <div v-if="task.config" class="md:col-span-2 lg:col-span-3">
+            <p class="text-sm text-muted mb-2">配置信息</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-clock" class="w-4 h-4 text-muted" />
+                <span class="text-muted">超时比例:</span>
+                <UBadge color="neutral" size="sm">{{ task.config.timeoutRatio }}</UBadge>
+              </div>
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-brain" class="w-4 h-4 text-muted" />
+                <span class="text-muted">模型版本:</span>
+                <UBadge color="neutral" size="sm">{{ task.config.modelVersion || 'yolov11n' }}</UBadge>
+              </div>
+              <div v-if="task.config.enablePreprocessing" class="flex items-center gap-2">
+                <UIcon name="i-lucide-filter" class="w-4 h-4 text-muted" />
+                <span class="text-muted">视频预处理:</span>
+                <UBadge color="primary" size="sm">已启用</UBadge>
+              </div>
+              <div v-if="task.config.enablePreprocessing" class="flex items-center gap-2">
+                <UIcon name="i-lucide-gauge" class="w-4 h-4 text-muted" />
+                <span class="text-muted">预处理强度:</span>
+                <UBadge color="info" size="sm">
+                  {{ task.config.preprocessingStrength === 'mild' ? '轻度' : task.config.preprocessingStrength === 'moderate' ? '中度' : '强度' }}
+                </UBadge>
+              </div>
+              <div v-if="task.config.enablePreprocessing" class="flex items-center gap-2">
+                <UIcon name="i-lucide-sparkles" class="w-4 h-4 text-muted" />
+                <span class="text-muted">熔池增强:</span>
+                <UBadge :color="task.config.preprocessingEnhancePool ? 'success' : 'neutral'" size="sm">
+                  {{ task.config.preprocessingEnhancePool ? '已启用' : '未启用' }}
+                </UBadge>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div
-          v-if="task.failureReason"
-          class="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg"
-        >
-          <p class="text-sm text-red-600 dark:text-red-400">
-            <strong>失败原因:</strong> {{ task.failureReason }}
-          </p>
+        <div v-if="task.failureReason" class="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+          <p class="text-sm text-red-600 dark:text-red-400"><strong>失败原因:</strong> {{ task.failureReason }}</p>
         </div>
       </UCard>
 
       <!-- 实时进度（处理中或生成结果视频） -->
       <UCard
         v-if="
-          status
-            && (status.status === 'PREPROCESSING'
-              || status.status === 'ANALYZING'
-              || (status.phase === '生成结果视频' && status.currentFrame))
+          status &&
+          (status.status === 'PREPROCESSING' ||
+            status.status === 'ANALYZING' ||
+            (status.phase === '生成结果视频' && status.currentFrame))
         "
       >
         <template #header>
           <h2 class="text-xl font-semibold">
-            {{
-              status.phase === "生成结果视频" ? "结果视频生成进度" : "处理进度"
-            }}
+            {{ status.phase === '生成结果视频' ? '结果视频生成进度' : '处理进度' }}
           </h2>
         </template>
 
         <div class="space-y-4">
           <div>
             <div class="flex justify-between mb-2">
-              <span class="text-sm font-medium">{{
-                status.phase || "处理中"
-              }}</span>
+              <span class="text-sm font-medium">{{ status.phase || '处理中' }}</span>
               <span class="text-sm font-medium">{{ progress.toFixed(2) || 0 }}%</span>
             </div>
             <UProgress :model-value="progress || 0" />
@@ -727,55 +677,34 @@ const statsCards = computed(() => {
 
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div v-if="status.currentFrame">
-              <p class="text-muted">
-                当前帧
-              </p>
-              <p class="font-semibold">
-                {{ status.currentFrame }} / {{ status.totalFrames }}
-              </p>
+              <p class="text-muted">当前帧</p>
+              <p class="font-semibold">{{ status.currentFrame }} / {{ status.totalFrames }}</p>
             </div>
             <div v-if="status.preprocessingDuration">
-              <p class="text-muted">
-                预处理耗时
-              </p>
+              <p class="text-muted">预处理耗时</p>
               <p class="font-semibold">
                 {{ formatTime(status.preprocessingDuration) }}
               </p>
             </div>
             <div v-if="status.analyzingElapsedTime">
-              <p class="text-muted">
-                分析耗时
-              </p>
+              <p class="text-muted">分析耗时</p>
               <p class="font-semibold">
                 {{ formatTime(status.analyzingElapsedTime) }}
               </p>
             </div>
             <div v-if="status.timeoutWarning">
-              <UBadge color="warning">
-                即将超时
-              </UBadge>
+              <UBadge color="warning"> 即将超时 </UBadge>
             </div>
           </div>
         </div>
       </UCard>
 
       <!-- 统计卡片（已完成） -->
-      <div
-        v-if="result"
-        class="grid grid-cols-1 md:grid-cols-3 gap-4"
-      >
-        <UCard
-          v-for="stat in statsCards"
-          :key="stat.title"
-        >
+      <div v-if="result" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <UCard v-for="stat in statsCards" :key="stat.title">
           <div class="flex items-center gap-4">
-            <div
-              :class="`p-3 rounded-lg bg-${stat.color}-100 dark:bg-${stat.color}-900/20`"
-            >
-              <UIcon
-                :name="stat.icon"
-                :class="`w-6 h-6 text-${stat.color}-600 dark:text-${stat.color}-400`"
-              />
+            <div :class="`p-3 rounded-lg bg-${stat.color}-100 dark:bg-${stat.color}-900/20`">
+              <UIcon :name="stat.icon" :class="`w-6 h-6 text-${stat.color}-600 dark:text-${stat.color}-400`" />
             </div>
             <div>
               <p class="text-sm text-muted">
@@ -792,26 +721,23 @@ const statsCards = computed(() => {
       <!-- 视频播放器（已完成） -->
       <UCard v-if="result">
         <template #header>
-          <h2 class="text-xl font-semibold">
-            视频播放
-          </h2>
+          <h2 class="text-xl font-semibold">视频播放</h2>
         </template>
 
         <VideoPlayer
           :task-id="taskId"
           :video-duration="task.videoDuration"
           :result-video-path="task.resultVideoPath"
+          :preprocessed-video-path="task.preprocessedVideoPath"
           :events="result.anomalyEvents"
-          :tracking-objects="result.trackingObjects"
+          :tracking-objects="result.trackingObjects as any"
         />
       </UCard>
 
       <!-- 全局频率分析（已完成） -->
       <UCard v-if="result && result.globalAnalysis">
         <template #header>
-          <h2 class="text-xl font-semibold">
-            全局频率分析
-          </h2>
+          <h2 class="text-xl font-semibold">全局频率分析</h2>
         </template>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -821,22 +747,18 @@ const statsCards = computed(() => {
             class="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg border border-yellow-200 dark:border-yellow-800"
           >
             <div class="flex items-center gap-2 mb-2">
-              <UIcon
-                name="i-lucide-zap"
-                class="w-5 h-5 text-yellow-600 dark:text-yellow-400"
-              />
-              <h3 class="font-semibold text-yellow-900 dark:text-yellow-100">
-                闪烁频率
-              </h3>
+              <UIcon name="i-lucide-zap" class="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+              <h3 class="font-semibold text-yellow-900 dark:text-yellow-100">闪烁频率</h3>
             </div>
             <p class="text-2xl font-bold text-yellow-900 dark:text-yellow-100 mb-1">
-              {{ result.globalAnalysis['闪烁'].frequency?.toFixed(2) }} Hz
+              {{ result.globalAnalysis['闪烁'].frequency?.toFixed(3) }} Hz
             </p>
             <p class="text-sm text-yellow-700 dark:text-yellow-300">
               趋势: {{ result.globalAnalysis['闪烁'].trend || '-' }}
             </p>
             <p class="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-              平均亮度: {{ result.globalAnalysis['闪烁'].mean?.toFixed(1) || '-' }}
+              平均亮度:
+              {{ result.globalAnalysis['闪烁'].mean?.toFixed(1) || '-' }}
             </p>
           </div>
 
@@ -846,22 +768,18 @@ const statsCards = computed(() => {
             class="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg border border-blue-200 dark:border-blue-800"
           >
             <div class="flex items-center gap-2 mb-2">
-              <UIcon
-                name="i-lucide-square"
-                class="w-5 h-5 text-blue-600 dark:text-blue-400"
-              />
-              <h3 class="font-semibold text-blue-900 dark:text-blue-100">
-                面积振荡
-              </h3>
+              <UIcon name="i-lucide-square" class="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <h3 class="font-semibold text-blue-900 dark:text-blue-100">面积振荡</h3>
             </div>
             <p class="text-2xl font-bold text-blue-900 dark:text-blue-100 mb-1">
-              {{ result.globalAnalysis['面积'].frequency?.toFixed(2) }} Hz
+              {{ result.globalAnalysis['面积'].frequency?.toFixed(3) }} Hz
             </p>
             <p class="text-sm text-blue-700 dark:text-blue-300">
               趋势: {{ result.globalAnalysis['面积'].trend || '-' }}
             </p>
             <p class="text-xs text-blue-600 dark:text-blue-400 mt-1">
-              平均值: {{ result.globalAnalysis['面积'].mean?.toFixed(0) || '-' }} px
+              平均值:
+              {{ result.globalAnalysis['面积'].mean?.toFixed(0) || '-' }} px
             </p>
           </div>
 
@@ -871,22 +789,18 @@ const statsCards = computed(() => {
             class="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg border border-green-200 dark:border-green-800"
           >
             <div class="flex items-center gap-2 mb-2">
-              <UIcon
-                name="i-lucide-git-commit-horizontal"
-                class="w-5 h-5 text-green-600 dark:text-green-400"
-              />
-              <h3 class="font-semibold text-green-900 dark:text-green-100">
-                周长振荡
-              </h3>
+              <UIcon name="i-lucide-git-commit-horizontal" class="w-5 h-5 text-green-600 dark:text-green-400" />
+              <h3 class="font-semibold text-green-900 dark:text-green-100">周长振荡</h3>
             </div>
             <p class="text-2xl font-bold text-green-900 dark:text-green-100 mb-1">
-              {{ result.globalAnalysis['周长'].frequency?.toFixed(2) }} Hz
+              {{ result.globalAnalysis['周长'].frequency?.toFixed(3) }} Hz
             </p>
             <p class="text-sm text-green-700 dark:text-green-300">
               趋势: {{ result.globalAnalysis['周长'].trend || '-' }}
             </p>
             <p class="text-xs text-green-600 dark:text-green-400 mt-1">
-              平均值: {{ result.globalAnalysis['周长'].mean?.toFixed(1) || '-' }} px
+              平均值:
+              {{ result.globalAnalysis['周长'].mean?.toFixed(1) || '-' }} px
             </p>
           </div>
 
@@ -896,23 +810,14 @@ const statsCards = computed(() => {
             class="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg border border-purple-200 dark:border-purple-800"
           >
             <div class="flex items-center gap-2 mb-2">
-              <UIcon
-                name="i-lucide-circle-dot"
-                class="w-5 h-5 text-purple-600 dark:text-purple-400"
-              />
-              <h3 class="font-semibold text-purple-900 dark:text-purple-100">
-                平均圆度
-              </h3>
+              <UIcon name="i-lucide-circle-dot" class="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <h3 class="font-semibold text-purple-900 dark:text-purple-100">平均圆度</h3>
             </div>
             <p class="text-2xl font-bold text-purple-900 dark:text-purple-100 mb-1">
               {{ result.globalAnalysis['圆度'].mean?.toFixed(3) || '-' }}
             </p>
-            <p class="text-sm text-purple-700 dark:text-purple-300">
-              形状稳定性指标
-            </p>
-            <p class="text-xs text-purple-600 dark:text-purple-400 mt-1">
-              基于净面积与外周长
-            </p>
+            <p class="text-sm text-purple-700 dark:text-purple-300">形状稳定性指标</p>
+            <p class="text-xs text-purple-600 dark:text-purple-400 mt-1">基于净面积与外周长</p>
           </div>
         </div>
       </UCard>
@@ -921,9 +826,7 @@ const statsCards = computed(() => {
       <UCard v-if="result && result.dynamicMetrics.length > 0">
         <template #header>
           <div class="flex items-center justify-between gap-4 flex-wrap">
-            <h2 class="text-xl font-semibold">
-              动态参数变化
-            </h2>
+            <h2 class="text-xl font-semibold">动态参数变化</h2>
             <div class="flex items-center gap-3">
               <!-- 视图模式切换 -->
               <USelect
@@ -932,7 +835,7 @@ const statsCards = computed(() => {
                 value-key="value"
                 size="sm"
               />
-              <!-- 单项指标选择（仅在单项模式下显示） -->
+              <!-- 单项指标选择(仅在单项模式下显示) -->
               <USelect
                 v-if="chartViewMode === 'single'"
                 v-model="selectedMetric"
@@ -948,26 +851,12 @@ const statsCards = computed(() => {
           <!-- ECharts 图表 -->
           <ClientOnly>
             <!-- 综合对比视图 -->
-            <MultiMetricsChart
-              v-if="chartViewMode === 'multi'"
-              :metrics="result.dynamicMetrics"
-              height="600px"
-            />
+            <MultiMetricsChart v-if="chartViewMode === 'multi'" :metrics="result.dynamicMetrics" height="600px" />
             <!-- 单项指标视图 -->
-            <MetricsChart
-              v-else
-              :metrics="result.dynamicMetrics"
-              :selected-metric="selectedMetric"
-              height="500px"
-            />
+            <MetricsChart v-else :metrics="result.dynamicMetrics" :selected-metric="selectedMetric" height="500px" />
             <template #fallback>
-              <div
-                class="flex items-center justify-center h-[500px] bg-muted/20 rounded-lg"
-              >
-                <UIcon
-                  name="i-lucide-loader-2"
-                  class="animate-spin w-8 h-8"
-                />
+              <div class="flex items-center justify-center h-[500px] bg-muted/20 rounded-lg">
+                <UIcon name="i-lucide-loader-2" class="animate-spin w-8 h-8" />
               </div>
             </template>
           </ClientOnly>
@@ -977,9 +866,7 @@ const statsCards = computed(() => {
       <!-- 异常事件列表（已完成） -->
       <UCard v-if="result && result.anomalyEvents.length > 0">
         <template #header>
-          <h2 class="text-xl font-semibold">
-            异常事件
-          </h2>
+          <h2 class="text-xl font-semibold">异常事件</h2>
         </template>
 
         <div class="space-y-2">
@@ -1001,20 +888,10 @@ const statsCards = computed(() => {
                 </div>
                 <p class="text-sm">
                   帧范围: {{ event.startFrame }} - {{ event.endFrame }}
-                  <span
-                    v-if="event.objectId"
-                    class="ml-2"
-                  >
-                    物体ID: {{ event.objectId }}
-                  </span>
+                  <span v-if="event.objectId" class="ml-2"> 物体ID: {{ event.objectId }} </span>
                 </p>
-                <div
-                  v-if="event.metadata"
-                  class="mt-2 text-sm text-muted"
-                >
-                  <pre class="bg-muted/50 p-2 rounded">{{
-                      JSON.stringify(event.metadata, null, 2)
-                  }}</pre>
+                <div v-if="event.metadata" class="mt-2 text-sm text-muted">
+                  <pre class="bg-muted/50 p-2 rounded">{{ JSON.stringify(event.metadata, null, 2) }}</pre>
                 </div>
               </div>
             </div>
@@ -1025,9 +902,7 @@ const statsCards = computed(() => {
       <!-- 事件统计（已完成） -->
       <UCard v-if="result && result.eventStatistics">
         <template #header>
-          <h2 class="text-xl font-semibold">
-            事件统计
-          </h2>
+          <h2 class="text-xl font-semibold">事件统计</h2>
         </template>
 
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1049,9 +924,7 @@ const statsCards = computed(() => {
       <!-- 物体统计（已完成） -->
       <UCard v-if="result && result.objectStatistics">
         <template #header>
-          <h2 class="text-xl font-semibold">
-            物体统计
-          </h2>
+          <h2 class="text-xl font-semibold">物体统计</h2>
         </template>
 
         <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -1073,78 +946,41 @@ const statsCards = computed(() => {
       <!-- 追踪物体列表（已完成） -->
       <UCard v-if="result && result.trackingObjects.length > 0">
         <template #header>
-          <h2 class="text-xl font-semibold">
-            追踪物体
-          </h2>
+          <h2 class="text-xl font-semibold">追踪物体</h2>
         </template>
 
         <!-- 分类标签页 -->
-        <UTabs
-          v-model="activeObjectTab"
-          :items="objectTabItems"
-          class="mb-4"
-        />
+        <UTabs v-model="activeObjectTab" :items="objectTabItems" class="mb-4" />
 
         <!-- 已追踪物体表格 -->
-        <div
-          v-show="activeObjectTab === 0"
-          class="space-y-4"
-        >
+        <div v-show="activeObjectTab === 0" class="space-y-4">
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
                 <tr class="border-b">
-                  <th class="text-left py-2">
-                    物体ID
-                  </th>
-                  <th class="text-left py-2">
-                    类别
-                  </th>
-                  <th class="text-left py-2">
-                    首帧
-                  </th>
-                  <th class="text-left py-2">
-                    末帧
-                  </th>
-                  <th class="text-left py-2">
-                    持续时间
-                  </th>
-                  <th class="text-center py-2">
-                    操作
-                  </th>
+                  <th class="text-left py-2">物体ID</th>
+                  <th class="text-left py-2">类别</th>
+                  <th class="text-left py-2">首帧</th>
+                  <th class="text-left py-2">末帧</th>
+                  <th class="text-left py-2">持续时间</th>
+                  <th class="text-center py-2">操作</th>
                 </tr>
               </thead>
               <tbody>
-                <tr
-                  v-for="obj in paginatedTrackedObjects"
-                  :key="obj.trackingId"
-                  class="border-b last:border-0"
-                >
+                <tr v-for="obj in paginatedTrackedObjects" :key="obj.trackingId" class="border-b last:border-0">
                   <td class="py-2">
-                    <UBadge
-                      color="success"
-                      size="sm"
-                    >
+                    <UBadge color="success" size="sm">
                       {{ obj.objectId }}
                     </UBadge>
                   </td>
                   <td class="py-2">
-                    <UBadge
-                      color="info"
-                      size="sm"
-                    >
+                    <UBadge color="info" size="sm">
                       {{ categoryMap[obj.category] || obj.category }}
                     </UBadge>
                   </td>
-                  <td class="py-2">
-                    {{ obj.firstFrame }} ({{ frameToTime(obj.firstFrame) }})
-                  </td>
-                  <td class="py-2">
-                    {{ obj.lastFrame }} ({{ frameToTime(obj.lastFrame) }})
-                  </td>
-                  <td class="py-2">
-                    {{ obj.lastFrame - obj.firstFrame }} 帧
-                  </td>
+                  <td class="py-2">{{ obj.firstFrame }} ({{ frameToTime(obj.firstFrame) }})</td>
+                  <td class="py-2">{{ obj.lastFrame }} ({{ frameToTime(obj.lastFrame) }})</td>
+                  <td class="py-2">{{ obj.lastFrame - obj.firstFrame }} 帧</td>
                   <td class="py-2 text-center">
                     <UButton
                       icon="i-lucide-route"
@@ -1163,70 +999,38 @@ const statsCards = computed(() => {
 
           <!-- 分页 -->
           <div class="flex justify-center">
-            <UPagination
-              v-model:page="trackedPage"
-              :total="Math.ceil(trackedObjects.length / objectPageSize)"
-            />
+            <UPagination v-model:page="trackedPage" :total="Math.ceil(trackedObjects.length / objectPageSize)" />
           </div>
         </div>
 
         <!-- 未追踪物体表格 -->
-        <div
-          v-show="activeObjectTab === 1"
-          class="space-y-4"
-        >
+        <div v-show="activeObjectTab === 1" class="space-y-4">
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
                 <tr class="border-b">
-                  <th class="text-left py-2">
-                    物体ID
-                  </th>
-                  <th class="text-left py-2">
-                    类别
-                  </th>
-                  <th class="text-left py-2">
-                    首帧
-                  </th>
-                  <th class="text-left py-2">
-                    末帧
-                  </th>
-                  <th class="text-left py-2">
-                    持续时间
-                  </th>
+                  <th class="text-left py-2">物体ID</th>
+                  <th class="text-left py-2">类别</th>
+                  <th class="text-left py-2">首帧</th>
+                  <th class="text-left py-2">末帧</th>
+                  <th class="text-left py-2">持续时间</th>
                 </tr>
               </thead>
               <tbody>
-                <tr
-                  v-for="obj in paginatedUntrackedObjects"
-                  :key="obj.trackingId"
-                  class="border-b last:border-0"
-                >
+                <tr v-for="obj in paginatedUntrackedObjects" :key="obj.trackingId" class="border-b last:border-0">
                   <td class="py-2">
-                    <UBadge
-                      color="neutral"
-                      size="sm"
-                    >
+                    <UBadge color="neutral" size="sm">
                       {{ obj.objectId }}
                     </UBadge>
                   </td>
                   <td class="py-2">
-                    <UBadge
-                      color="info"
-                      size="sm"
-                    >
+                    <UBadge color="info" size="sm">
                       {{ categoryMap[obj.category] || obj.category }}
                     </UBadge>
                   </td>
-                  <td class="py-2">
-                    {{ obj.firstFrame }} ({{ frameToTime(obj.firstFrame) }})
-                  </td>
-                  <td class="py-2">
-                    {{ obj.lastFrame }} ({{ frameToTime(obj.lastFrame) }})
-                  </td>
-                  <td class="py-2">
-                    {{ obj.lastFrame - obj.firstFrame }} 帧
-                  </td>
+                  <td class="py-2">{{ obj.firstFrame }} ({{ frameToTime(obj.firstFrame) }})</td>
+                  <td class="py-2">{{ obj.lastFrame }} ({{ frameToTime(obj.lastFrame) }})</td>
+                  <td class="py-2">{{ obj.lastFrame - obj.firstFrame }} 帧</td>
                 </tr>
               </tbody>
             </table>
@@ -1234,10 +1038,7 @@ const statsCards = computed(() => {
 
           <!-- 分页 -->
           <div class="flex justify-center">
-            <UPagination
-              v-model:page="untrackedPage"
-              :total="Math.ceil(untrackedObjects.length / objectPageSize)"
-            />
+            <UPagination v-model:page="untrackedPage" :total="Math.ceil(untrackedObjects.length / objectPageSize)" />
           </div>
         </div>
       </UCard>
@@ -1246,32 +1047,25 @@ const statsCards = computed(() => {
       <UModal
         v-model:open="trajectoryModalOpen"
         title="物体轨迹查看"
-        :description="`物体 ID: ${selectedObject?.objectId || ''} - ${selectedObject?.category ? (categoryMap[selectedObject.category] || selectedObject.category) : ''}`"
+        :description="`物体 ID: ${selectedObject?.objectId || ''} - ${
+          selectedObject?.category ? categoryMap[selectedObject.category] || selectedObject.category : ''
+        }`"
         class="w-full max-w-7xl max-h-[90vh]"
       >
         <template #content>
-          <div
-            v-if="selectedObject"
-            class="space-y-4 p-6"
-          >
+          <div v-if="selectedObject" class="space-y-4 p-6">
             <!-- 信息 -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <span class="text-muted">类别：</span>
-                <UBadge
-                  color="info"
-                  size="sm"
-                >
-                  {{
-                    categoryMap[selectedObject.category]
-                      || selectedObject.category
-                  }}
+                <UBadge color="info" size="sm">
+                  {{ categoryMap[selectedObject.category] || selectedObject.category }}
                 </UBadge>
               </div>
               <div>
                 <span class="text-muted">帧范围：</span>
-                {{ selectedObject.firstFrame }} - {{ selectedObject.lastFrame }}
-                (共 {{ selectedObject.lastFrame - selectedObject.firstFrame }} 帧)
+                {{ selectedObject.firstFrame }} - {{ selectedObject.lastFrame }} (共
+                {{ selectedObject.lastFrame - selectedObject.firstFrame }} 帧)
               </div>
               <div>
                 <span class="text-muted">轨迹点数：</span>
@@ -1279,41 +1073,27 @@ const statsCards = computed(() => {
               </div>
               <div>
                 <span class="text-muted">当前：</span>
-                帧 {{ currentTrajectoryFrame }} |
-                置信度 {{ currentTrajectoryPoint?.confidence.toFixed(4) || "-" }}
+                帧 {{ currentTrajectoryFrame }} | 置信度
+                {{ currentTrajectoryPoint?.confidence.toFixed(4) || '-' }}
               </div>
             </div>
 
             <!-- 轨迹可视化画布 -->
             <div class="relative bg-black rounded-lg overflow-hidden">
-              <canvas
-                ref="trajectoryCanvas"
-                class="w-full"
-                :width="1920"
-                :height="1080"
-              />
+              <canvas ref="trajectoryCanvas" class="w-full" :width="1920" :height="1080" />
             </div>
 
             <!-- 播放控制 -->
             <div class="space-y-3">
               <div class="flex items-center gap-2">
                 <UButton
-                  :icon="
-                    trajectoryPlaying ? 'i-lucide-pause' : 'i-lucide-play'
-                  "
+                  :icon="trajectoryPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
                   size="sm"
                   @click="toggleTrajectoryPlayback"
                 >
-                  {{ trajectoryPlaying ? "暂停" : "播放" }}
+                  {{ trajectoryPlaying ? '暂停' : '播放' }}
                 </UButton>
-                <UButton
-                  icon="i-lucide-skip-back"
-                  size="sm"
-                  variant="soft"
-                  @click="resetTrajectory"
-                >
-                  重置
-                </UButton>
+                <UButton icon="i-lucide-skip-back" size="sm" variant="soft" @click="resetTrajectory"> 重置 </UButton>
                 <span class="text-sm text-muted ml-auto">
                   {{ trajectoryCurrentIndex + 1 }} /
                   {{ selectedObject?.trajectory?.length || 0 }}
@@ -1328,7 +1108,7 @@ const statsCards = computed(() => {
                 :max="(selectedObject?.trajectory?.length || 1) - 1"
                 class="w-full"
                 @input="updateTrajectoryCanvas"
-              >
+              />
             </div>
           </div>
         </template>
@@ -1336,17 +1116,9 @@ const statsCards = computed(() => {
     </div>
 
     <!-- 错误状态 -->
-    <div
-      v-else
-      class="text-center py-12"
-    >
-      <UIcon
-        name="i-lucide-alert-circle"
-        class="w-12 h-12 mx-auto text-red-500 mb-4"
-      />
-      <p class="text-muted">
-        任务不存在
-      </p>
+    <div v-else class="text-center py-12">
+      <UIcon name="i-lucide-alert-circle" class="w-12 h-12 mx-auto text-red-500 mb-4" />
+      <p class="text-muted">任务不存在</p>
     </div>
   </div>
 </template>

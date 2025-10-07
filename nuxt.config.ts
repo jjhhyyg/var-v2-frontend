@@ -10,7 +10,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080'
+      apiBase: 'http://localhost:8080'
     }
   },
 
@@ -19,7 +19,8 @@ export default defineNuxtConfig({
   },
 
   routeRules: {
-    '/': { prerender: false }
+    '/': { ssr: false },
+    '/tasks/**': { ssr: false }
   },
 
   compatibilityDate: '2025-01-15',
