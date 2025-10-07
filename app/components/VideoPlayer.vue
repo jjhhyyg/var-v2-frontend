@@ -102,6 +102,34 @@
           :title="getObjectTooltip(obj)"
         />
       </div>
+
+      <!-- 颜色图例 -->
+      <div class="timeline-legend">
+        <div class="legend-item">
+          <div class="legend-color event-pool" />
+          <span class="legend-text">熔池未到边</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color event-adhesion" />
+          <span class="legend-text">电极粘连物</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color event-crown" />
+          <span class="legend-text">锭冠</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color event-glow" />
+          <span class="legend-text">辉光</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color event-side-arc" />
+          <span class="legend-text">边弧（侧弧）</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color event-creeping-arc" />
+          <span class="legend-text">爬弧</span>
+        </div>
+      </div>
     </div>
 
     <!-- 事件列表 -->
@@ -483,6 +511,37 @@ const onTimelineClick = (e: MouseEvent) => {
   border-radius: 4px;
   cursor: pointer;
   overflow: hidden;
+}
+
+.timeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: #fafafa;
+  border-radius: 4px;
+  border: 1px solid #e8e8e8;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.legend-text {
+  font-size: 0.85rem;
+  color: #666;
+  white-space: nowrap;
 }
 
 .timeline-progress {
