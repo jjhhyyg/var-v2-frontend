@@ -10,7 +10,10 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBase: 'http://localhost:8080'
+      // 使用环境变量配置API基础URL
+      // 开发环境: NUXT_PUBLIC_API_BASE=http://localhost:8080
+      // 生产环境: NUXT_PUBLIC_API_BASE=https://your-production-domain.com
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080'
     }
   },
 
