@@ -426,9 +426,14 @@ const onTimelineClick = (e: MouseEvent) => {
   flex-direction: column;
   gap: 1.5rem;
   padding: 1.5rem;
-  background: #fff;
+  background: rgb(var(--color-gray-50));
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.dark .video-player-container {
+  background: rgb(var(--color-gray-900));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .video-wrapper {
@@ -449,9 +454,8 @@ const onTimelineClick = (e: MouseEvent) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1rem;
-  background: #f5f5f5;
-  border-radius: 6px;
+  padding: 1rem 0;
+  gap: 1rem;
 }
 
 .video-switch {
@@ -462,16 +466,29 @@ const onTimelineClick = (e: MouseEvent) => {
 
 .switch-btn {
   padding: 0.5rem 1rem;
-  border: 1px solid #ddd;
-  background: #fff;
-  border-radius: 4px;
+  border: 1px solid rgb(var(--color-gray-200));
+  background: rgb(var(--color-gray-50));
+  color: rgb(var(--color-gray-600));
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
   font-size: 0.9rem;
 }
 
+.dark .switch-btn {
+  border-color: rgb(var(--color-gray-700));
+  background: rgb(var(--color-gray-800));
+  color: rgb(var(--color-gray-300));
+}
+
 .switch-btn:hover {
-  background: #f0f0f0;
+  background: rgb(var(--color-gray-100));
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.dark .switch-btn:hover {
+  background: rgb(var(--color-gray-700));
 }
 
 .switch-btn.active {
@@ -481,15 +498,19 @@ const onTimelineClick = (e: MouseEvent) => {
 }
 
 .no-result-hint {
-  color: #999;
   font-size: 0.85rem;
+  color: rgb(var(--color-gray-400));
   font-style: italic;
 }
 
 .time-display {
   font-family: monospace;
-  font-size: 0.95rem;
-  color: #666;
+  font-size: 0.9rem;
+  color: rgb(var(--color-gray-600));
+}
+
+.dark .time-display {
+  color: rgb(var(--color-gray-300));
 }
 
 .timeline-container {
@@ -500,17 +521,25 @@ const onTimelineClick = (e: MouseEvent) => {
 
 .timeline-label {
   font-weight: 600;
-  color: #333;
+  color: rgb(var(--color-gray-700));
   font-size: 0.9rem;
+}
+
+.dark .timeline-label {
+  color: rgb(var(--color-gray-200));
 }
 
 .timeline {
   position: relative;
   height: 60px;
-  background: #f0f0f0;
+  background: rgb(var(--color-gray-200));
   border-radius: 4px;
   cursor: pointer;
   overflow: hidden;
+}
+
+.dark .timeline {
+  background: rgb(var(--color-gray-700));
 }
 
 .timeline-legend {
@@ -518,9 +547,14 @@ const onTimelineClick = (e: MouseEvent) => {
   flex-wrap: wrap;
   gap: 1rem;
   padding: 0.75rem;
-  background: #fafafa;
+  background: rgb(var(--color-gray-100));
   border-radius: 4px;
-  border: 1px solid #e8e8e8;
+  border: 1px solid rgb(var(--color-gray-200));
+}
+
+.dark .timeline-legend {
+  background: rgb(var(--color-gray-800));
+  border-color: rgb(var(--color-gray-700));
 }
 
 .legend-item {
@@ -533,15 +567,23 @@ const onTimelineClick = (e: MouseEvent) => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: 2px solid rgb(var(--color-gray-50));
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   flex-shrink: 0;
 }
 
+.dark .legend-color {
+  border-color: rgb(var(--color-gray-800));
+}
+
 .legend-text {
   font-size: 0.85rem;
-  color: #666;
+  color: rgb(var(--color-gray-600));
   white-space: nowrap;
+}
+
+.dark .legend-text {
+  color: rgb(var(--color-gray-300));
 }
 
 .timeline-progress {
@@ -566,8 +608,12 @@ const onTimelineClick = (e: MouseEvent) => {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: 2px solid rgb(var(--color-gray-50));
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.dark .event-dot {
+  border-color: rgb(var(--color-gray-800));
 }
 
 /* 事件标记颜色（根据后端BGR定义转换为RGB） */
@@ -652,19 +698,27 @@ const onTimelineClick = (e: MouseEvent) => {
   justify-content: space-between;
   align-items: center;
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid rgb(var(--color-gray-200));
+}
+
+.dark .events-header {
+  border-bottom-color: rgb(var(--color-gray-700));
 }
 
 .events-header h3 {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
-  color: #333;
+  color: rgb(var(--color-gray-700));
+}
+
+.dark .events-header h3 {
+  color: rgb(var(--color-gray-200));
 }
 
 .event-count {
   font-size: 0.85rem;
-  color: #999;
+  color: rgb(var(--color-gray-400));
 }
 
 .events-body {
@@ -680,15 +734,23 @@ const onTimelineClick = (e: MouseEvent) => {
   align-items: center;
   gap: 1rem;
   padding: 0.75rem;
-  background: #fafafa;
+  background: rgb(var(--color-gray-100));
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
+.dark .event-item {
+  background: rgb(var(--color-gray-800));
+}
+
 .event-item:hover {
-  background: #f0f0f0;
+  background: rgb(var(--color-gray-200));
   transform: translateX(4px);
+}
+
+.dark .event-item:hover {
+  background: rgb(var(--color-gray-700));
 }
 
 /* 事件列表图标颜色（复用object-*类的颜色定义） */
@@ -736,25 +798,37 @@ const onTimelineClick = (e: MouseEvent) => {
 
 .event-type {
   font-weight: 500;
-  color: #333;
+  color: rgb(var(--color-gray-700));
   font-size: 0.9rem;
+}
+
+.dark .event-type {
+  color: rgb(var(--color-gray-200));
 }
 
 .event-time {
   font-family: monospace;
   font-size: 0.85rem;
-  color: #999;
+  color: rgb(var(--color-gray-500));
+}
+
+.dark .event-time {
+  color: rgb(var(--color-gray-400));
 }
 
 .jump-btn {
   padding: 0.25rem 0.75rem;
   border: 1px solid #1890ff;
-  background: #fff;
+  background: rgb(var(--color-gray-50));
   color: #1890ff;
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.85rem;
   transition: all 0.2s;
+}
+
+.dark .jump-btn {
+  background: rgb(var(--color-gray-900));
 }
 
 .jump-btn:hover {
@@ -765,7 +839,7 @@ const onTimelineClick = (e: MouseEvent) => {
 .no-events {
   text-align: center;
   padding: 2rem;
-  color: #999;
+  color: rgb(var(--color-gray-400));
   font-size: 0.9rem;
 }
 </style>
