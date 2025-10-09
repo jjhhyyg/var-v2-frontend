@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { PageResult, Task } from '~/composables/useTaskApi'
+import type { PageResult, Task, TaskStatus } from '~/composables/useTaskApi'
 
 const { uploadTask, listTasks, startAnalysis, deleteTask } = useTaskApi()
-const { connect, disconnect, subscribeToTaskUpdates } = useWebSocket()
+const { connect, disconnect, subscribeToTaskUpdates, subscribeToTaskDetailUpdate, subscribeToTask } = useWebSocket()
 const toast = useToast()
 
 // 页面状态
@@ -13,6 +13,11 @@ const totalPages = ref(0)
 const currentPage = ref(0)
 const selectedStatus = ref<string>()
 let unsubscribeUpdates: (() => void) | null = null
+const taskDetailUnsubscribers = new Map<string, () => void>()
+const taskStatusUnsubscribers = new Map<string, () => void>()
+
+// 存储每个任务的实时状态（包括进度）
+const taskStatusMap = ref<Record<string, TaskStatus>>({})
 
 // 上传表单
 const uploadForm = ref({
@@ -82,12 +87,52 @@ const loadTasks = async () => {
     const result: PageResult<Task> = await listTasks(currentPage.value, 20, selectedStatus.value)
     tasks.value = result.items
     totalPages.value = result.totalPages
+
+    // 订阅每个任务的详情更新
+    subscribeToTaskDetails()
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '加载失败'
     toast.add({ title: '加载失败', description: errorMessage, color: 'error' })
   } finally {
     loading.value = false
   }
+}
+
+// 订阅所有任务的详情更新
+const subscribeToTaskDetails = () => {
+  // 先取消所有现有订阅
+  taskDetailUnsubscribers.forEach(unsubscribe => unsubscribe())
+  taskDetailUnsubscribers.clear()
+  taskStatusUnsubscribers.forEach(unsubscribe => unsubscribe())
+  taskStatusUnsubscribers.clear()
+
+  // 为每个任务订阅详情更新
+  tasks.value.forEach((task) => {
+    // 订阅任务详情更新（结果视频路径、模型版本等）
+    const unsubscribeDetail = subscribeToTaskDetailUpdate(task.taskId, (updatedTask) => {
+      console.log('收到任务详情更新:', updatedTask)
+      // 更新列表中的任务数据
+      const taskIndex = tasks.value.findIndex(t => t.taskId === updatedTask.taskId)
+      if (taskIndex !== -1) {
+        tasks.value[taskIndex] = updatedTask
+      }
+    })
+    taskDetailUnsubscribers.set(task.taskId, unsubscribeDetail)
+
+    // 订阅任务状态更新（进度、阶段等）
+    const unsubscribeStatus = subscribeToTask(task.taskId, (status) => {
+      console.log('收到任务状态更新:', status)
+      // 更新状态映射
+      taskStatusMap.value[task.taskId] = status
+
+      // 同时更新任务列表中的状态
+      const taskIndex = tasks.value.findIndex(t => t.taskId === task.taskId)
+      if (taskIndex !== -1 && tasks.value[taskIndex]) {
+        tasks.value[taskIndex].status = status.status
+      }
+    })
+    taskStatusUnsubscribers.set(task.taskId, unsubscribeStatus)
+  })
 }
 
 // 开始分析任务
@@ -214,6 +259,13 @@ onUnmounted(() => {
   if (unsubscribeUpdates) {
     unsubscribeUpdates()
   }
+  // 取消所有任务详情订阅
+  taskDetailUnsubscribers.forEach(unsubscribe => unsubscribe())
+  taskDetailUnsubscribers.clear()
+  // 取消所有任务状态订阅
+  taskStatusUnsubscribers.forEach(unsubscribe => unsubscribe())
+  taskStatusUnsubscribers.clear()
+
   disconnect()
 })
 
@@ -343,6 +395,25 @@ const handlePageChange = (page: number) => {
                 <UBadge :color="getStatusColor(task.status)">
                   {{ getStatusText(task.status) }}
                 </UBadge>
+              </div>
+
+              <!-- 进度条 - 仅在预处理和分析阶段显示 -->
+              <div
+                v-if="(task.status === 'PREPROCESSING' || task.status === 'ANALYZING') && taskStatusMap[task.taskId]"
+                class="mb-3"
+              >
+                <div class="flex items-center justify-between text-xs text-muted mb-1">
+                  <span>{{ taskStatusMap[task.taskId]?.phase || '处理中' }}</span>
+                  <span v-if="taskStatusMap[task.taskId]?.progress !== undefined">
+                    {{ Math.round((taskStatusMap[task.taskId]?.progress || 0) * 100) }}%
+                  </span>
+                </div>
+                <UProgress
+                  :model-value="Math.round((taskStatusMap[task.taskId]?.progress || 0) * 100)"
+                  :max="100"
+                  :color="task.status === 'PREPROCESSING' ? 'info' : 'primary'"
+                  size="sm"
+                />
               </div>
 
               <div class="text-sm text-muted space-y-1">
