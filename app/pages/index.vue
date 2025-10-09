@@ -343,7 +343,6 @@ const handlePageChange = (page: number) => {
                 <UBadge :color="getStatusColor(task.status)">
                   {{ getStatusText(task.status) }}
                 </UBadge>
-                <UBadge v-if="task.isTimeout" color="warning"> 超时 </UBadge>
               </div>
 
               <div class="text-sm text-muted space-y-1">

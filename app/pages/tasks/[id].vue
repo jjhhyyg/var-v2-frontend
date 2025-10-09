@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue'
 import type { Task, TaskResult, TaskStatus, TrackingObject } from '~/composables/useTaskApi'
 
 const route = useRoute()
@@ -547,7 +548,6 @@ const statsCards = computed(() => {
               <UBadge :color="getStatusColor(task.status)" size="lg">
                 {{ getStatusText(task.status) }}
               </UBadge>
-              <UBadge v-if="task.isTimeout" color="warning" size="lg"> 超时 </UBadge>
               <UBadge :color="isConnected ? 'success' : 'neutral'" size="sm">
                 <div class="flex items-center gap-1">
                   <span
