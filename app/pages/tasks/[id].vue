@@ -621,7 +621,7 @@ const statsCards = computed(() => {
               <div class="flex items-center gap-2">
                 <UIcon name="i-lucide-brain" class="w-4 h-4 text-muted" />
                 <span class="text-muted">模型版本:</span>
-                <UBadge color="neutral" size="sm">{{ task.config.modelVersion || 'yolov11n' }}</UBadge>
+                <UBadge color="neutral" size="sm">{{ task.config.modelVersion || '未知' }}</UBadge>
               </div>
               <div v-if="task.config.enablePreprocessing" class="flex items-center gap-2">
                 <UIcon name="i-lucide-filter" class="w-4 h-4 text-muted" />

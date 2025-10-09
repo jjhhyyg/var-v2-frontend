@@ -352,7 +352,7 @@ const handlePageChange = (page: number) => {
                 <div v-if="task.config" class="flex items-center gap-2 flex-wrap mt-2">
                   <span class="text-muted">配置:</span>
                   <UBadge color="neutral" size="xs">{{ task.config.timeoutRatio }}</UBadge>
-                  <UBadge color="neutral" size="xs">{{ task.config.modelVersion || 'yolov11n' }}</UBadge>
+                  <UBadge color="neutral" size="xs">{{ task.config.modelVersion || '未知' }}</UBadge>
                   <UBadge v-if="task.config.enablePreprocessing" color="primary" size="xs">
                     预处理:{{ task.config.preprocessingStrength === 'mild' ? '轻度' : task.config.preprocessingStrength === 'moderate' ? '中度' : '强度' }}
                   </UBadge>
