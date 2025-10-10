@@ -2,7 +2,52 @@
   <div class="video-player-container">
     <!-- 视频播放器 -->
     <div class="video-wrapper">
+      <!-- 视频加载失败占位符 -->
+      <div
+        v-if="videoError"
+        class="video-error-placeholder"
+      >
+        <div class="error-content">
+          <UIcon
+            name="i-lucide-video-off"
+            class="error-icon"
+          />
+          <h3 class="error-title">
+            视频加载失败
+          </h3>
+          <p class="error-message">
+            {{ videoErrorMessage }}
+          </p>
+          <div class="error-actions">
+            <UButton
+              icon="i-lucide-refresh-cw"
+              @click="retryLoadVideo"
+            >
+              重新加载
+            </UButton>
+          </div>
+        </div>
+      </div>
+
+      <!-- 视频加载中占位符 -->
+      <div
+        v-else-if="videoLoading"
+        class="video-loading-placeholder"
+      >
+        <div class="loading-content">
+          <UIcon
+            name="i-lucide-loader-2"
+            class="loading-icon animate-spin"
+          />
+          <p class="loading-text">
+            正在加载视频...
+          </p>
+        </div>
+      </div>
+
+      <!-- 视频元素 -->
       <video
+        v-show="!videoError && !videoLoading"
         ref="videoPlayer"
         class="video-element"
         controls
@@ -10,6 +55,9 @@
         @loadedmetadata="onLoadedMetadata"
         @play="isPlaying = true"
         @pause="isPlaying = false"
+        @error="onVideoError"
+        @loadstart="onVideoLoadStart"
+        @canplay="onVideoCanPlay"
       >
         <source
           :src="currentVideoUrl"
@@ -215,6 +263,9 @@ const videoType = ref<'original' | 'preprocessed' | 'result'>('original')
 const currentTime = ref(0)
 const duration = ref(0)
 const isPlaying = ref(false)
+const videoError = ref(false)
+const videoErrorMessage = ref('')
+const videoLoading = ref(true)
 
 // 获取后端API基础URL
 const { baseURL } = useApi()
@@ -287,6 +338,55 @@ const onTimeUpdate = () => {
 const onLoadedMetadata = () => {
   if (videoPlayer.value) {
     duration.value = videoPlayer.value.duration || props.videoDuration
+  }
+}
+
+// 视频开始加载
+const onVideoLoadStart = () => {
+  videoLoading.value = true
+  videoError.value = false
+}
+
+// 视频可以播放
+const onVideoCanPlay = () => {
+  videoLoading.value = false
+  videoError.value = false
+}
+
+// 视频加载错误
+const onVideoError = () => {
+  videoLoading.value = false
+  videoError.value = true
+
+  const video = videoPlayer.value
+  if (video?.error) {
+    switch (video.error.code) {
+      case MediaError.MEDIA_ERR_ABORTED:
+        videoErrorMessage.value = '视频加载被中止，请重试'
+        break
+      case MediaError.MEDIA_ERR_NETWORK:
+        videoErrorMessage.value = '网络错误，无法加载视频'
+        break
+      case MediaError.MEDIA_ERR_DECODE:
+        videoErrorMessage.value = '视频解码失败，文件可能已损坏'
+        break
+      case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+        videoErrorMessage.value = '不支持的视频格式或视频不存在'
+        break
+      default:
+        videoErrorMessage.value = '视频加载失败，请稍后重试'
+    }
+  } else {
+    videoErrorMessage.value = '视频加载失败，请稍后重试'
+  }
+}
+
+// 重新加载视频
+const retryLoadVideo = () => {
+  videoError.value = false
+  videoLoading.value = true
+  if (videoPlayer.value) {
+    videoPlayer.value.load()
   }
 }
 
@@ -442,12 +542,105 @@ const onTimelineClick = (e: MouseEvent) => {
   background: #000;
   border-radius: 8px;
   overflow: hidden;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .video-element {
   width: 100%;
   height: auto;
   display: block;
+}
+
+/* 视频错误占位符 */
+.video-error-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(var(--color-gray-900));
+  color: rgb(var(--color-gray-100));
+}
+
+.dark .video-error-placeholder {
+  background: rgb(var(--color-gray-950));
+}
+
+.error-content {
+  text-align: center;
+  padding: 2rem;
+  max-width: 400px;
+}
+
+.error-icon {
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto 1.5rem;
+  color: rgb(var(--color-red-400));
+}
+
+.error-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: rgb(var(--color-gray-100));
+}
+
+.dark .error-title {
+  color: rgb(var(--color-gray-50));
+}
+
+.error-message {
+  font-size: 0.95rem;
+  color: rgb(var(--color-gray-400));
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.error-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+/* 视频加载占位符 */
+.video-loading-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(var(--color-gray-900));
+}
+
+.dark .video-loading-placeholder {
+  background: rgb(var(--color-gray-950));
+}
+
+.loading-content {
+  text-align: center;
+  color: rgb(var(--color-gray-300));
+}
+
+.loading-icon {
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 1rem;
+  color: rgb(var(--color-primary-400));
+}
+
+.loading-text {
+  font-size: 0.95rem;
+  color: rgb(var(--color-gray-400));
 }
 
 .controls-bar {
