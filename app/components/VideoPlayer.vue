@@ -1,5 +1,5 @@
 <template>
-  <div class="video-player-container">
+  <UCard>
     <!-- 视频播放器 -->
     <div class="video-wrapper">
       <!-- 视频加载失败占位符 -->
@@ -70,51 +70,59 @@
     <!-- 控制栏 -->
     <div class="controls-bar">
       <!-- 视频切换 -->
-      <div class="video-switch">
-        <button
-          :class="['switch-btn', { active: videoType === 'original' }]"
+      <UFieldGroup>
+        <UButton
+          :variant="videoType === 'original' ? 'solid' : 'outline'"
+          color="primary"
           @click="switchVideo('original')"
         >
           原始视频
-        </button>
-        <button
+        </UButton>
+        <UButton
           v-if="hasPreprocessedVideo"
-          :class="['switch-btn', { active: videoType === 'preprocessed' }]"
+          :variant="videoType === 'preprocessed' ? 'solid' : 'outline'"
+          color="primary"
           @click="switchVideo('preprocessed')"
         >
           预处理视频
-        </button>
-        <button
+        </UButton>
+        <UButton
           v-if="hasResultVideo"
-          :class="['switch-btn', { active: videoType === 'result' }]"
+          :variant="videoType === 'result' ? 'solid' : 'outline'"
+          color="primary"
           @click="switchVideo('result')"
         >
           结果视频
-        </button>
-        <span
-          v-if="!hasResultVideo"
-          class="no-result-hint"
-        > 结果视频生成中... </span>
-      </div>
+        </UButton>
+      </UFieldGroup>
+
+      <span
+        v-if="!hasResultVideo"
+        class="no-result-hint text-muted text-sm"
+      >
+        结果视频生成中...
+      </span>
 
       <!-- 当前时间显示 -->
-      <div class="time-display">
+      <div class="time-display font-mono text-sm text-muted">
         {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
       </div>
     </div>
 
     <!-- 时间轴和事件标记 -->
-    <div class="timeline-container">
-      <div class="timeline-label">
-        事件时间轴
-      </div>
+    <UCard class="mt-6">
+      <template #header>
+        <h3 class="font-semibold">
+          事件时间轴
+        </h3>
+      </template>
+
       <div
         ref="timeline"
         class="timeline"
         @click="onTimelineClick"
       >
         <!-- 进度条 -->
-
         <div
           class="timeline-progress"
           :style="{ width: progressPercentage + '%' }"
@@ -151,41 +159,48 @@
         />
       </div>
 
-      <!-- 颜色图例 -->
-      <div class="timeline-legend">
-        <div class="legend-item">
-          <div class="legend-color event-pool" />
-          <span class="legend-text">熔池未到边</span>
+      <template #footer>
+        <!-- 颜色图例 -->
+        <div class="timeline-legend">
+          <div class="legend-item">
+            <div class="legend-color event-pool" />
+            <span class="legend-text">熔池未到边</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color event-adhesion" />
+            <span class="legend-text">电极粘连物</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color event-crown" />
+            <span class="legend-text">锭冠</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color event-glow" />
+            <span class="legend-text">辉光</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color event-side-arc" />
+            <span class="legend-text">边弧（侧弧）</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color event-creeping-arc" />
+            <span class="legend-text">爬弧</span>
+          </div>
         </div>
-        <div class="legend-item">
-          <div class="legend-color event-adhesion" />
-          <span class="legend-text">电极粘连物</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color event-crown" />
-          <span class="legend-text">锭冠</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color event-glow" />
-          <span class="legend-text">辉光</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color event-side-arc" />
-          <span class="legend-text">边弧（侧弧）</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color event-creeping-arc" />
-          <span class="legend-text">爬弧</span>
-        </div>
-      </div>
-    </div>
+      </template>
+    </UCard>
 
     <!-- 事件列表 -->
-    <div class="events-list">
-      <div class="events-header">
-        <h3>异常事件列表</h3>
-        <span class="event-count">共 {{ events.length }} 个事件</span>
-      </div>
+    <UCard class="mt-6">
+      <template #header>
+        <div class="flex justify-between items-center">
+          <h3 class="font-semibold">
+            异常事件列表
+          </h3>
+          <span class="text-sm text-muted">共 {{ events.length }} 个事件</span>
+        </div>
+      </template>
+
       <div class="events-body">
         <div
           v-for="event in sortedEvents"
@@ -205,21 +220,23 @@
               {{ formatTime(frameToTimestamp(event.startFrame)) }}
             </div>
           </div>
-          <div class="event-action">
-            <button class="jump-btn">
-              跳转
-            </button>
-          </div>
+          <UButton
+            size="xs"
+            variant="outline"
+            color="primary"
+          >
+            跳转
+          </UButton>
         </div>
         <div
           v-if="events.length === 0"
-          class="no-events"
+          class="no-events text-center py-8 text-muted"
         >
           暂无异常事件
         </div>
       </div>
-    </div>
-  </div>
+    </UCard>
+  </UCard>
 </template>
 
 <script setup lang="ts">
@@ -521,21 +538,6 @@ const onTimelineClick = (e: MouseEvent) => {
 </script>
 
 <style scoped>
-.video-player-container {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  background: rgb(var(--color-gray-50));
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.dark .video-player-container {
-  background: rgb(var(--color-gray-900));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
 .video-wrapper {
   position: relative;
   width: 100%;
@@ -546,6 +548,7 @@ const onTimelineClick = (e: MouseEvent) => {
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 1rem;
 }
 
 .video-element {
@@ -564,12 +567,12 @@ const onTimelineClick = (e: MouseEvent) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(var(--color-gray-900));
-  color: rgb(var(--color-gray-100));
+  background: rgb(17, 24, 39);
+  color: rgb(243, 244, 246);
 }
 
-.dark .video-error-placeholder {
-  background: rgb(var(--color-gray-950));
+:global(html.dark) .video-error-placeholder {
+  background: rgb(3, 7, 18);
 }
 
 .error-content {
@@ -582,23 +585,18 @@ const onTimelineClick = (e: MouseEvent) => {
   width: 4rem;
   height: 4rem;
   margin: 0 auto 1.5rem;
-  color: rgb(var(--color-red-400));
+  color: rgb(239, 68, 68);
 }
 
 .error-title {
   font-size: 1.25rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
-  color: rgb(var(--color-gray-100));
-}
-
-.dark .error-title {
-  color: rgb(var(--color-gray-50));
 }
 
 .error-message {
   font-size: 0.95rem;
-  color: rgb(var(--color-gray-400));
+  color: rgb(156, 163, 175);
   margin-bottom: 1.5rem;
   line-height: 1.5;
 }
@@ -619,28 +617,28 @@ const onTimelineClick = (e: MouseEvent) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(var(--color-gray-900));
+  background: rgb(17, 24, 39);
 }
 
-.dark .video-loading-placeholder {
-  background: rgb(var(--color-gray-950));
+:global(html.dark) .video-loading-placeholder {
+  background: rgb(3, 7, 18);
 }
 
 .loading-content {
   text-align: center;
-  color: rgb(var(--color-gray-300));
+  color: rgb(209, 213, 219);
 }
 
 .loading-icon {
   width: 3rem;
   height: 3rem;
   margin: 0 auto 1rem;
-  color: rgb(var(--color-primary-400));
+  color: rgb(59, 130, 246);
 }
 
 .loading-text {
   font-size: 0.95rem;
-  color: rgb(var(--color-gray-400));
+  color: rgb(156, 163, 175);
 }
 
 .controls-bar {
@@ -649,134 +647,20 @@ const onTimelineClick = (e: MouseEvent) => {
   align-items: center;
   padding: 1rem 0;
   gap: 1rem;
-}
-
-.video-switch {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.switch-btn {
-  padding: 0.5rem 1rem;
-  border: 1px solid rgb(var(--color-gray-200));
-  background: rgb(var(--color-gray-50));
-  color: rgb(var(--color-gray-600));
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 0.9rem;
-}
-
-.dark .switch-btn {
-  border-color: rgb(var(--color-gray-700));
-  background: rgb(var(--color-gray-800));
-  color: rgb(var(--color-gray-300));
-}
-
-.switch-btn:hover {
-  background: rgb(var(--color-gray-100));
-  border-color: #1890ff;
-  color: #1890ff;
-}
-
-.dark .switch-btn:hover {
-  background: rgb(var(--color-gray-700));
-}
-
-.switch-btn.active {
-  background: #1890ff;
-  color: #fff;
-  border-color: #1890ff;
-}
-
-.no-result-hint {
-  font-size: 0.85rem;
-  color: rgb(var(--color-gray-400));
-  font-style: italic;
-}
-
-.time-display {
-  font-family: monospace;
-  font-size: 0.9rem;
-  color: rgb(var(--color-gray-600));
-}
-
-.dark .time-display {
-  color: rgb(var(--color-gray-300));
-}
-
-.timeline-container {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.timeline-label {
-  font-weight: 600;
-  color: rgb(var(--color-gray-700));
-  font-size: 0.9rem;
-}
-
-.dark .timeline-label {
-  color: rgb(var(--color-gray-200));
+  flex-wrap: wrap;
 }
 
 .timeline {
   position: relative;
   height: 60px;
-  background: rgb(var(--color-gray-200));
+  background: rgb(229, 231, 235);
   border-radius: 4px;
   cursor: pointer;
   overflow: hidden;
 }
 
-.dark .timeline {
-  background: rgb(var(--color-gray-700));
-}
-
-.timeline-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  padding: 0.75rem;
-  background: rgb(var(--color-gray-100));
-  border-radius: 4px;
-  border: 1px solid rgb(var(--color-gray-200));
-}
-
-.dark .timeline-legend {
-  background: rgb(var(--color-gray-800));
-  border-color: rgb(var(--color-gray-700));
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.legend-color {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid rgb(var(--color-gray-50));
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  flex-shrink: 0;
-}
-
-.dark .legend-color {
-  border-color: rgb(var(--color-gray-800));
-}
-
-.legend-text {
-  font-size: 0.85rem;
-  color: rgb(var(--color-gray-600));
-  white-space: nowrap;
-}
-
-.dark .legend-text {
-  color: rgb(var(--color-gray-300));
+:global(html.dark) .timeline {
+  background: rgb(55, 65, 81);
 }
 
 .timeline-progress {
@@ -801,44 +685,24 @@ const onTimelineClick = (e: MouseEvent) => {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid rgb(var(--color-gray-50));
+  border: 2px solid rgb(249, 250, 251);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-.dark .event-dot {
-  border-color: rgb(var(--color-gray-800));
+:global(html.dark) .event-dot {
+  border-color: rgb(31, 41, 55);
 }
 
-/* 事件标记颜色（根据后端BGR定义转换为RGB） */
-.event-pool {
-  background: rgb(0, 100, 0); /* 深绿色 - 熔池未到边 */
-}
+/* 事件标记颜色 */
+.event-pool { background: rgb(0, 100, 0); }
+.event-adhesion { background: rgb(255, 0, 0); }
+.event-crown { background: rgb(0, 0, 255); }
+.event-glow { background: rgb(0, 255, 255); }
+.event-side-arc { background: rgb(128, 0, 128); }
+.event-creeping-arc { background: rgb(255, 165, 0); }
+.event-default { background: #666; }
 
-.event-adhesion {
-  background: rgb(255, 0, 0); /* 红色 - 粘连物 */
-}
-
-.event-crown {
-  background: rgb(0, 0, 255); /* 蓝色 - 锭冠 */
-}
-
-.event-glow {
-  background: rgb(0, 255, 255); /* 青色 - 辉光 */
-}
-
-.event-side-arc {
-  background: rgb(128, 0, 128); /* 紫色 - 边弧（侧弧） */
-}
-
-.event-creeping-arc {
-  background: rgb(255, 165, 0); /* 橙色 - 爬弧 */
-}
-
-.event-default {
-  background: #666;
-}
-
-/* 物体出现时间段颜色（与事件保持一致） */
+/* 物体出现时间段 */
 .object-range {
   position: absolute;
   top: 0;
@@ -848,70 +712,44 @@ const onTimelineClick = (e: MouseEvent) => {
   transition: opacity 0.2s;
 }
 
-.object-range:hover {
-  opacity: 0.5;
-}
+.object-range:hover { opacity: 0.5; }
 
-.object-pool {
-  background: rgb(0, 100, 0); /* 深绿色 - 熔池未到边 */
-}
+.object-pool { background: rgb(0, 100, 0); }
+.object-adhesion { background: rgb(255, 0, 0); }
+.object-crown { background: rgb(0, 0, 255); }
+.object-glow { background: rgb(0, 255, 255); }
+.object-side-arc { background: rgb(128, 0, 128); }
+.object-creeping-arc { background: rgb(255, 165, 0); }
+.object-default { background: #666; }
 
-.object-adhesion {
-  background: rgb(255, 0, 0); /* 红色 - 粘连物 */
-}
-
-.object-crown {
-  background: rgb(0, 0, 255); /* 蓝色 - 锭冠 */
-}
-
-.object-glow {
-  background: rgb(0, 255, 255); /* 青色 - 辉光 */
-}
-
-.object-side-arc {
-  background: rgb(128, 0, 128); /* 紫色 - 边弧（侧弧） */
-}
-
-.object-creeping-arc {
-  background: rgb(255, 165, 0); /* 橙色 - 爬弧 */
-}
-
-.object-default {
-  background: #666;
-}
-
-.events-list {
+.timeline-legend {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
-.events-header {
+.legend-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding-bottom: 0.5rem;
-  border-bottom: 2px solid rgb(var(--color-gray-200));
+  gap: 0.5rem;
 }
 
-.dark .events-header {
-  border-bottom-color: rgb(var(--color-gray-700));
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgb(249, 250, 251);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
 }
 
-.events-header h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: rgb(var(--color-gray-700));
+:global(html.dark) .legend-color {
+  border-color: rgb(31, 41, 55);
 }
 
-.dark .events-header h3 {
-  color: rgb(var(--color-gray-200));
-}
-
-.event-count {
+.legend-text {
   font-size: 0.85rem;
-  color: rgb(var(--color-gray-400));
+  white-space: nowrap;
 }
 
 .events-body {
@@ -927,59 +765,30 @@ const onTimelineClick = (e: MouseEvent) => {
   align-items: center;
   gap: 1rem;
   padding: 0.75rem;
-  background: rgb(var(--color-gray-100));
+  background: rgb(243, 244, 246);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.dark .event-item {
-  background: rgb(var(--color-gray-800));
+:global(html.dark) .event-item {
+  background: rgb(31, 41, 55);
 }
 
 .event-item:hover {
-  background: rgb(var(--color-gray-200));
+  background: rgb(229, 231, 235);
   transform: translateX(4px);
 }
 
-.dark .event-item:hover {
-  background: rgb(var(--color-gray-700));
+:global(html.dark) .event-item:hover {
+  background: rgb(55, 65, 81);
 }
 
-/* 事件列表图标颜色（复用object-*类的颜色定义） */
 .event-icon {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.event-icon.event-pool {
-  background: rgb(0, 100, 0);
-}
-
-.event-icon.event-adhesion {
-  background: rgb(255, 0, 0);
-}
-
-.event-icon.event-crown {
-  background: rgb(0, 0, 255);
-}
-
-.event-icon.event-glow {
-  background: rgb(0, 255, 255);
-}
-
-.event-icon.event-side-arc {
-  background: rgb(128, 0, 128);
-}
-
-.event-icon.event-creeping-arc {
-  background: rgb(255, 165, 0);
-}
-
-.event-icon.event-default {
-  background: #666;
 }
 
 .event-info {
@@ -991,48 +800,16 @@ const onTimelineClick = (e: MouseEvent) => {
 
 .event-type {
   font-weight: 500;
-  color: rgb(var(--color-gray-700));
   font-size: 0.9rem;
-}
-
-.dark .event-type {
-  color: rgb(var(--color-gray-200));
 }
 
 .event-time {
   font-family: monospace;
   font-size: 0.85rem;
-  color: rgb(var(--color-gray-500));
+  color: rgb(107, 114, 128);
 }
 
-.dark .event-time {
-  color: rgb(var(--color-gray-400));
-}
-
-.jump-btn {
-  padding: 0.25rem 0.75rem;
-  border: 1px solid #1890ff;
-  background: rgb(var(--color-gray-50));
-  color: #1890ff;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.2s;
-}
-
-.dark .jump-btn {
-  background: rgb(var(--color-gray-900));
-}
-
-.jump-btn:hover {
-  background: #1890ff;
-  color: #fff;
-}
-
-.no-events {
-  text-align: center;
-  padding: 2rem;
-  color: rgb(var(--color-gray-400));
-  font-size: 0.9rem;
+:global(html.dark) .event-time {
+  color: rgb(156, 163, 175);
 }
 </style>
