@@ -642,6 +642,26 @@ const statsCards = computed(() => {
                   {{ task.config.preprocessingEnhancePool ? '已启用' : '未启用' }}
                 </UBadge>
               </div>
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-git-merge" class="w-4 h-4 text-muted" />
+                <span class="text-muted">追踪合并:</span>
+                <UBadge :color="task.config.enableTrackingMerge ? 'success' : 'neutral'" size="sm">
+                  {{ task.config.enableTrackingMerge ? '已启用' : '未启用' }}
+                </UBadge>
+              </div>
+              <div v-if="task.config.enableTrackingMerge" class="flex items-center gap-2">
+                <UIcon name="i-lucide-workflow" class="w-4 h-4 text-muted" />
+                <span class="text-muted">合并策略:</span>
+                <UBadge color="info" size="sm">
+                  {{
+                    task.config.trackingMergeStrategy === 'auto' ? '自动识别' :
+                    task.config.trackingMergeStrategy === 'adhesion' ? '粘连物专用' :
+                    task.config.trackingMergeStrategy === 'ingot_crown' ? '锭冠专用' :
+                    task.config.trackingMergeStrategy === 'conservative' ? '保守模式' :
+                    task.config.trackingMergeStrategy === 'aggressive' ? '激进模式' : '未知'
+                  }}
+                </UBadge>
+              </div>
             </div>
           </div>
         </div>

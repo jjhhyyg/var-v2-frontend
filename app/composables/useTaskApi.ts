@@ -11,6 +11,8 @@ export interface TaskConfig {
   enablePreprocessing?: boolean
   preprocessingStrength?: string
   preprocessingEnhancePool?: boolean
+  enableTrackingMerge?: boolean
+  trackingMergeStrategy?: string
 }
 
 /**

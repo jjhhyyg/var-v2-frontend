@@ -26,7 +26,9 @@ const uploadForm = ref({
   timeoutRatio: '1:4',
   enablePreprocessing: false,
   preprocessingStrength: 'moderate',
-  preprocessingEnhancePool: true
+  preprocessingEnhancePool: true,
+  enableTrackingMerge: true,
+  trackingMergeStrategy: 'auto'
 })
 
 // 文件选择
@@ -59,7 +61,9 @@ const handleUpload = async () => {
       timeoutRatio: uploadForm.value.timeoutRatio,
       enablePreprocessing: uploadForm.value.enablePreprocessing,
       preprocessingStrength: uploadForm.value.preprocessingStrength,
-      preprocessingEnhancePool: uploadForm.value.preprocessingEnhancePool
+      preprocessingEnhancePool: uploadForm.value.preprocessingEnhancePool,
+      enableTrackingMerge: uploadForm.value.enableTrackingMerge,
+      trackingMergeStrategy: uploadForm.value.trackingMergeStrategy
     })
 
     toast.add({ title: '任务创建成功', color: 'success' })
@@ -351,6 +355,37 @@ const handlePageChange = (page: number) => {
                 <UCheckbox v-model="uploadForm.preprocessingEnhancePool" />
                 <label class="ml-2 text-sm">启用熔池特定增强</label>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 追踪轨迹合并选项 -->
+        <div class="mt-4 border-t pt-4">
+          <div class="flex items-center gap-2 mb-3">
+            <UCheckbox v-model="uploadForm.enableTrackingMerge" />
+            <label class="text-sm font-medium cursor-pointer" @click="uploadForm.enableTrackingMerge = !uploadForm.enableTrackingMerge">
+              启用追踪轨迹合并
+            </label>
+            <UTooltip text="解决粘连物/锭冠脱落时的ID断裂问题，完整追踪物体生命周期">
+              <UIcon name="i-lucide-info" class="text-gray-400" />
+            </UTooltip>
+          </div>
+
+          <div v-if="uploadForm.enableTrackingMerge" class="ml-6">
+            <!-- 合并策略 -->
+            <div class="flex flex-col">
+              <label class="block text-sm font-medium mb-2"> 合并策略 </label>
+              <USelect
+                v-model="uploadForm.trackingMergeStrategy"
+                :items="[
+                  { label: '自动识别 (推荐)', value: 'auto' },
+                  { label: '粘连物专用', value: 'adhesion' },
+                  { label: '锭冠专用', value: 'ingot_crown' },
+                  { label: '保守模式', value: 'conservative' },
+                  { label: '激进模式', value: 'aggressive' }
+                ]"
+                value-key="value"
+              />
             </div>
           </div>
         </div>
