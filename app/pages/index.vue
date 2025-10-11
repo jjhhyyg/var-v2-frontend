@@ -26,8 +26,8 @@ const uploadForm = ref({
   timeoutRatio: '1:4',
   enablePreprocessing: false,
   preprocessingStrength: 'moderate',
-  preprocessingEnhancePool: true,
-  enableTrackingMerge: true,
+  preprocessingEnhancePool: false,
+  enableTrackingMerge: false,
   trackingMergeStrategy: 'auto'
 })
 

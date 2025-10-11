@@ -146,6 +146,8 @@ export const useTaskApi = () => {
     if (config?.enablePreprocessing !== undefined) formData.append('enablePreprocessing', String(config.enablePreprocessing))
     if (config?.preprocessingStrength) formData.append('preprocessingStrength', config.preprocessingStrength)
     if (config?.preprocessingEnhancePool !== undefined) formData.append('preprocessingEnhancePool', String(config.preprocessingEnhancePool))
+    if (config?.enableTrackingMerge !== undefined) formData.append('enableTrackingMerge', String(config.enableTrackingMerge))
+    if (config?.trackingMergeStrategy) formData.append('trackingMergeStrategy', config.trackingMergeStrategy)
 
     return request<Task>('/api/tasks/upload', {
       method: 'POST',
