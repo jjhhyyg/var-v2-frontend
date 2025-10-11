@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PageResult, Task, TaskStatus } from '~/composables/useTaskApi'
 
-const { uploadTask, listTasks, startAnalysis, deleteTask } = useTaskApi()
+const { uploadTask, listTasks, startAnalysis, deleteTask, getTaskStatus } = useTaskApi()
 const { connect, disconnect, subscribeToTaskUpdates, subscribeToTaskDetailUpdate, subscribeToTask } = useWebSocket()
 const toast = useToast()
 
@@ -91,6 +91,30 @@ const loadTasks = async () => {
     const result: PageResult<Task> = await listTasks(currentPage.value, 20, selectedStatus.value)
     tasks.value = result.items
     totalPages.value = result.totalPages
+
+    // 对于正在处理中的任务,主动获取最新的进度信息
+    const processingTasks = tasks.value.filter(
+      task => task.status === 'PREPROCESSING' || task.status === 'ANALYZING'
+    )
+
+    // 并行获取所有处理中任务的状态
+    await Promise.all(
+      processingTasks.map(async (task) => {
+        try {
+          const status = await getTaskStatus(task.taskId)
+          taskStatusMap.value[task.taskId] = status
+        } catch (error) {
+          console.error(`获取任务 ${task.taskId} 状态失败:`, error)
+          // 即使获取失败,也设置一个基础状态,这样进度条至少能显示
+          taskStatusMap.value[task.taskId] = {
+            taskId: task.taskId,
+            status: task.status,
+            phase: task.status === 'PREPROCESSING' ? '预处理中' : '分析中',
+            progress: 0
+          }
+        }
+      })
+    )
 
     // 订阅每个任务的详情更新
     subscribeToTaskDetails()

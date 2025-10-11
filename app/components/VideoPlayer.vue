@@ -103,6 +103,44 @@
         结果视频生成中...
       </span>
 
+      <!-- 帧控制 -->
+      <div class="frame-controls">
+        <UButton
+          size="xs"
+          icon="i-lucide-chevron-left"
+          variant="outline"
+          :disabled="currentFrame <= 1"
+          @click="previousFrame"
+        >
+          上一帧
+        </UButton>
+
+        <div class="frame-display">
+          <UInput
+            v-model="currentFrameInput"
+            type="number"
+            size="xs"
+            :min="1"
+            :max="totalFrames"
+            class="frame-input"
+            @keyup.enter="jumpToFrame"
+            @blur="jumpToFrame"
+          />
+          <span class="frame-separator">/</span>
+          <span class="total-frames">{{ totalFrames }}</span>
+        </div>
+
+        <UButton
+          size="xs"
+          icon="i-lucide-chevron-right"
+          variant="outline"
+          :disabled="currentFrame >= totalFrames"
+          @click="nextFrame"
+        >
+          下一帧
+        </UButton>
+      </div>
+
       <!-- 当前时间显示 -->
       <div class="time-display font-mono text-sm text-muted">
         {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
@@ -240,7 +278,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 interface Event {
   eventId: string
@@ -283,6 +321,7 @@ const isPlaying = ref(false)
 const videoError = ref(false)
 const videoErrorMessage = ref('')
 const videoLoading = ref(true)
+const currentFrameInput = ref('1')
 
 // 获取后端API基础URL
 const { baseURL } = useApi()
@@ -301,6 +340,21 @@ const progressPercentage = computed(() => {
 
 // 视频帧率（假设25fps，实际应从视频元数据获取）
 const fps = ref(25)
+
+// 当前帧号（基于当前时间和帧率）
+const currentFrame = computed(() => {
+  return Math.floor(currentTime.value * fps.value) + 1
+})
+
+// 总帧数
+const totalFrames = computed(() => {
+  return Math.floor(duration.value * fps.value)
+})
+
+// 监听当前帧变化，更新输入框
+watch(currentFrame, (newFrame) => {
+  currentFrameInput.value = String(newFrame)
+})
 
 // 帧号转时间戳
 const frameToTimestamp = (frame: number): number => {
@@ -535,6 +589,39 @@ const onTimelineClick = (e: MouseEvent) => {
 
   videoPlayer.value.currentTime = Math.max(0, Math.min(newTime, duration.value))
 }
+
+// 上一帧
+const previousFrame = () => {
+  if (!videoPlayer.value || currentFrame.value <= 1) return
+  const targetFrame = currentFrame.value - 1
+  videoPlayer.value.currentTime = (targetFrame - 1) / fps.value
+}
+
+// 下一帧
+const nextFrame = () => {
+  if (!videoPlayer.value || currentFrame.value >= totalFrames.value) return
+  const targetFrame = currentFrame.value + 1
+  videoPlayer.value.currentTime = (targetFrame - 1) / fps.value
+}
+
+// 跳转到指定帧
+const jumpToFrame = () => {
+  if (!videoPlayer.value) return
+
+  const targetFrame = parseInt(currentFrameInput.value)
+  if (isNaN(targetFrame)) {
+    // 如果输入无效，恢复为当前帧
+    currentFrameInput.value = String(currentFrame.value)
+    return
+  }
+
+  // 限制帧号范围
+  const clampedFrame = Math.max(1, Math.min(targetFrame, totalFrames.value))
+  currentFrameInput.value = String(clampedFrame)
+
+  // 跳转到目标帧（帧号从1开始，时间从0开始）
+  videoPlayer.value.currentTime = (clampedFrame - 1) / fps.value
+}
 </script>
 
 <style scoped>
@@ -648,6 +735,44 @@ const onTimelineClick = (e: MouseEvent) => {
   padding: 1rem 0;
   gap: 1rem;
   flex-wrap: wrap;
+}
+
+.frame-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.frame-display {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: monospace;
+  font-size: 0.875rem;
+}
+
+.frame-input {
+  width: 80px;
+  text-align: center;
+}
+
+.frame-separator {
+  color: rgb(107, 114, 128);
+  padding: 0 0.25rem;
+}
+
+:global(html.dark) .frame-separator {
+  color: rgb(156, 163, 175);
+}
+
+.total-frames {
+  color: rgb(107, 114, 128);
+  min-width: 50px;
+  text-align: left;
+}
+
+:global(html.dark) .total-frames {
+  color: rgb(156, 163, 175);
 }
 
 .timeline {
