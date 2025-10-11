@@ -1,280 +1,288 @@
 <template>
-  <UCard>
-    <!-- 视频播放器 -->
-    <div class="video-wrapper">
-      <!-- 视频加载失败占位符 -->
-      <div
-        v-if="videoError"
-        class="video-error-placeholder"
-      >
-        <div class="error-content">
-          <UIcon
-            name="i-lucide-video-off"
-            class="error-icon"
-          />
-          <h3 class="error-title">
-            视频加载失败
-          </h3>
-          <p class="error-message">
-            {{ videoErrorMessage }}
-          </p>
-          <div class="error-actions">
-            <UButton
-              icon="i-lucide-refresh-cw"
-              @click="retryLoadVideo"
+  <div class="video-player-container">
+    <!-- 左侧：视频播放器和时间轴 -->
+    <div class="video-section">
+      <UCard>
+        <!-- 视频播放器 -->
+        <div class="video-wrapper">
+          <!-- 视频加载失败占位符 -->
+          <div
+            v-if="videoError"
+            class="video-error-placeholder"
+          >
+            <div class="error-content">
+              <UIcon
+                name="i-lucide-video-off"
+                class="error-icon"
+              />
+              <h3 class="error-title">
+                视频加载失败
+              </h3>
+              <p class="error-message">
+                {{ videoErrorMessage }}
+              </p>
+              <div class="error-actions">
+                <UButton
+                  icon="i-lucide-refresh-cw"
+                  @click="retryLoadVideo"
+                >
+                  重新加载
+                </UButton>
+              </div>
+            </div>
+          </div>
+
+          <!-- 视频加载中占位符 -->
+          <div
+            v-else-if="videoLoading"
+            class="video-loading-placeholder"
+          >
+            <div class="loading-content">
+              <UIcon
+                name="i-lucide-loader-2"
+                class="loading-icon animate-spin"
+              />
+              <p class="loading-text">
+                正在加载视频...
+              </p>
+            </div>
+          </div>
+
+          <!-- 视频元素 -->
+          <video
+            v-show="!videoError && !videoLoading"
+            ref="videoPlayer"
+            class="video-element"
+            controls
+            @timeupdate="onTimeUpdate"
+            @loadedmetadata="onLoadedMetadata"
+            @play="isPlaying = true"
+            @pause="isPlaying = false"
+            @error="onVideoError"
+            @loadstart="onVideoLoadStart"
+            @canplay="onVideoCanPlay"
+          >
+            <source
+              :src="currentVideoUrl"
+              type="video/mp4"
             >
-              重新加载
+            您的浏览器不支持视频播放
+          </video>
+        </div>
+
+        <!-- 控制栏 -->
+        <div class="controls-bar">
+          <!-- 视频切换 -->
+          <UFieldGroup>
+            <UButton
+              :variant="videoType === 'original' ? 'solid' : 'outline'"
+              color="primary"
+              @click="switchVideo('original')"
+            >
+              原始视频
+            </UButton>
+            <UButton
+              v-if="hasPreprocessedVideo"
+              :variant="videoType === 'preprocessed' ? 'solid' : 'outline'"
+              color="primary"
+              @click="switchVideo('preprocessed')"
+            >
+              预处理视频
+            </UButton>
+            <UButton
+              v-if="hasResultVideo"
+              :variant="videoType === 'result' ? 'solid' : 'outline'"
+              color="primary"
+              @click="switchVideo('result')"
+            >
+              结果视频
+            </UButton>
+          </UFieldGroup>
+
+          <span
+            v-if="!hasResultVideo"
+            class="no-result-hint text-muted text-sm"
+          >
+            结果视频生成中...
+          </span>
+
+          <!-- 帧控制 -->
+          <div class="frame-controls">
+            <UButton
+              size="xs"
+              icon="i-lucide-chevron-left"
+              variant="outline"
+              :disabled="currentFrame <= 1"
+              @click="previousFrame"
+            >
+              上一帧
+            </UButton>
+
+            <div class="frame-display">
+              <UInput
+                v-model="currentFrameInput"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                size="xs"
+                class="frame-input"
+                @keyup.enter="jumpToFrame"
+                @blur="jumpToFrame"
+                @input="validateFrameInput"
+              />
+              <span class="frame-separator">/</span>
+              <span class="total-frames">{{ totalFrames }}</span>
+            </div>
+
+            <UButton
+              size="xs"
+              icon="i-lucide-chevron-right"
+              variant="outline"
+              :disabled="currentFrame >= totalFrames"
+              @click="nextFrame"
+            >
+              下一帧
             </UButton>
           </div>
-        </div>
-      </div>
 
-      <!-- 视频加载中占位符 -->
-      <div
-        v-else-if="videoLoading"
-        class="video-loading-placeholder"
-      >
-        <div class="loading-content">
-          <UIcon
-            name="i-lucide-loader-2"
-            class="loading-icon animate-spin"
-          />
-          <p class="loading-text">
-            正在加载视频...
-          </p>
-        </div>
-      </div>
-
-      <!-- 视频元素 -->
-      <video
-        v-show="!videoError && !videoLoading"
-        ref="videoPlayer"
-        class="video-element"
-        controls
-        @timeupdate="onTimeUpdate"
-        @loadedmetadata="onLoadedMetadata"
-        @play="isPlaying = true"
-        @pause="isPlaying = false"
-        @error="onVideoError"
-        @loadstart="onVideoLoadStart"
-        @canplay="onVideoCanPlay"
-      >
-        <source
-          :src="currentVideoUrl"
-          type="video/mp4"
-        >
-        您的浏览器不支持视频播放
-      </video>
-    </div>
-
-    <!-- 控制栏 -->
-    <div class="controls-bar">
-      <!-- 视频切换 -->
-      <UFieldGroup>
-        <UButton
-          :variant="videoType === 'original' ? 'solid' : 'outline'"
-          color="primary"
-          @click="switchVideo('original')"
-        >
-          原始视频
-        </UButton>
-        <UButton
-          v-if="hasPreprocessedVideo"
-          :variant="videoType === 'preprocessed' ? 'solid' : 'outline'"
-          color="primary"
-          @click="switchVideo('preprocessed')"
-        >
-          预处理视频
-        </UButton>
-        <UButton
-          v-if="hasResultVideo"
-          :variant="videoType === 'result' ? 'solid' : 'outline'"
-          color="primary"
-          @click="switchVideo('result')"
-        >
-          结果视频
-        </UButton>
-      </UFieldGroup>
-
-      <span
-        v-if="!hasResultVideo"
-        class="no-result-hint text-muted text-sm"
-      >
-        结果视频生成中...
-      </span>
-
-      <!-- 帧控制 -->
-      <div class="frame-controls">
-        <UButton
-          size="xs"
-          icon="i-lucide-chevron-left"
-          variant="outline"
-          :disabled="currentFrame <= 1"
-          @click="previousFrame"
-        >
-          上一帧
-        </UButton>
-
-        <div class="frame-display">
-          <UInput
-            v-model="currentFrameInput"
-            type="number"
-            size="xs"
-            :min="1"
-            :max="totalFrames"
-            class="frame-input"
-            @keyup.enter="jumpToFrame"
-            @blur="jumpToFrame"
-          />
-          <span class="frame-separator">/</span>
-          <span class="total-frames">{{ totalFrames }}</span>
-        </div>
-
-        <UButton
-          size="xs"
-          icon="i-lucide-chevron-right"
-          variant="outline"
-          :disabled="currentFrame >= totalFrames"
-          @click="nextFrame"
-        >
-          下一帧
-        </UButton>
-      </div>
-
-      <!-- 当前时间显示 -->
-      <div class="time-display font-mono text-sm text-muted">
-        {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-      </div>
-    </div>
-
-    <!-- 时间轴和事件标记 -->
-    <UCard class="mt-6">
-      <template #header>
-        <h3 class="font-semibold">
-          事件时间轴
-        </h3>
-      </template>
-
-      <div
-        ref="timeline"
-        class="timeline"
-        @click="onTimelineClick"
-      >
-        <!-- 进度条 -->
-        <div
-          class="timeline-progress"
-          :style="{ width: progressPercentage + '%' }"
-        />
-
-        <!-- 事件标记 -->
-        <div
-          v-for="event in events"
-          :key="event.eventId"
-          class="event-marker"
-          :style="{
-            left: getEventPosition(frameToTimestamp(event.startFrame)) + '%'
-          }"
-          :title="getEventTooltip(event)"
-          @click.stop="seekToEvent(event)"
-        >
-          <div
-            class="event-dot"
-            :class="getEventClass(event.eventType)"
-          />
-        </div>
-
-        <!-- 物体出现时间段 -->
-        <div
-          v-for="obj in trackingObjects"
-          :key="obj.trackingId"
-          class="object-range"
-          :style="{
-            left: getObjectRangeStart(obj) + '%',
-            width: getObjectRangeWidth(obj) + '%'
-          }"
-          :class="getObjectClass(obj.category)"
-          :title="getObjectTooltip(obj)"
-        />
-      </div>
-
-      <template #footer>
-        <!-- 颜色图例 -->
-        <div class="timeline-legend">
-          <div class="legend-item">
-            <div class="legend-color event-pool" />
-            <span class="legend-text">熔池未到边</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color event-adhesion" />
-            <span class="legend-text">电极粘连物</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color event-crown" />
-            <span class="legend-text">锭冠</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color event-glow" />
-            <span class="legend-text">辉光</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color event-side-arc" />
-            <span class="legend-text">边弧（侧弧）</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color event-creeping-arc" />
-            <span class="legend-text">爬弧</span>
+          <!-- 当前时间显示 -->
+          <div class="time-display font-mono text-sm text-muted">
+            {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
           </div>
         </div>
-      </template>
-    </UCard>
+      </UCard>
 
-    <!-- 事件列表 -->
-    <UCard class="mt-6">
-      <template #header>
-        <div class="flex justify-between items-center">
-          <h3 class="font-semibold">
-            异常事件列表
+      <!-- 时间轴和事件标记 -->
+      <UCard class="mt-4">
+        <template #header>
+          <h3 class="font-semibold text-sm">
+            事件时间轴
           </h3>
-          <span class="text-sm text-muted">共 {{ events.length }} 个事件</span>
-        </div>
-      </template>
+        </template>
 
-      <div class="events-body">
         <div
-          v-for="event in sortedEvents"
-          :key="event.eventId"
-          class="event-item"
-          @click="seekToEvent(event)"
+          ref="timeline"
+          class="timeline"
+          @click="onTimelineClick"
         >
+          <!-- 进度条 -->
           <div
-            class="event-icon"
-            :class="getEventClass(event.eventType)"
+            class="timeline-progress"
+            :style="{ width: progressPercentage + '%' }"
           />
-          <div class="event-info">
-            <div class="event-type">
-              {{ getEventTypeLabel(event.eventType) }}
+
+          <!-- 事件标记 -->
+          <div
+            v-for="event in events"
+            :key="event.eventId"
+            class="event-marker"
+            :style="{
+              left: getEventPosition(frameToTimestamp(event.startFrame)) + '%'
+            }"
+            :title="getEventTooltip(event)"
+            @click.stop="seekToEvent(event)"
+          >
+            <div
+              class="event-dot"
+              :class="getEventClass(event.eventType)"
+            />
+          </div>
+
+          <!-- 物体出现时间段 -->
+          <div
+            v-for="obj in trackingObjects"
+            :key="obj.trackingId"
+            class="object-range"
+            :style="{
+              left: getObjectRangeStart(obj) + '%',
+              width: getObjectRangeWidth(obj) + '%'
+            }"
+            :class="getObjectClass(obj.category)"
+            :title="getObjectTooltip(obj)"
+          />
+        </div>
+
+        <template #footer>
+          <!-- 颜色图例 -->
+          <div class="timeline-legend">
+            <div class="legend-item">
+              <div class="legend-color event-pool" />
+              <span class="legend-text">熔池未到边</span>
             </div>
-            <div class="event-time">
-              {{ formatTime(frameToTimestamp(event.startFrame)) }}
+            <div class="legend-item">
+              <div class="legend-color event-adhesion" />
+              <span class="legend-text">电极粘连物</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color event-crown" />
+              <span class="legend-text">锭冠</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color event-glow" />
+              <span class="legend-text">辉光</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color event-side-arc" />
+              <span class="legend-text">边弧（侧弧）</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color event-creeping-arc" />
+              <span class="legend-text">爬弧</span>
             </div>
           </div>
-          <UButton
-            size="xs"
-            variant="outline"
-            color="primary"
+        </template>
+      </UCard>
+    </div>
+
+    <!-- 右侧：事件列表 -->
+    <div class="events-section">
+      <UCard>
+        <template #header>
+          <div class="events-header">
+            <h3 class="font-semibold text-sm">
+              异常事件列表
+            </h3>
+            <span class="text-xs text-muted">{{ events.length }} 个</span>
+          </div>
+        </template>
+
+        <div class="events-body">
+          <div
+            v-for="event in sortedEvents"
+            :key="event.eventId"
+            class="event-item"
+            @click="seekToEvent(event)"
           >
-            跳转
-          </UButton>
+            <div
+              class="event-icon"
+              :class="getEventClass(event.eventType)"
+            />
+            <div class="event-info">
+              <div class="event-type">
+                {{ getEventTypeLabel(event.eventType) }}
+                <span v-if="getEventDetail(event)" class="event-detail">
+                  ({{ getEventDetail(event) }})
+                </span>
+              </div>
+              <div class="event-time">
+                {{ formatTime(frameToTimestamp(event.startFrame)) }} - {{ formatTime(frameToTimestamp(event.endFrame)) }}
+              </div>
+            </div>
+            <UIcon
+              name="i-lucide-chevron-right"
+              class="event-arrow"
+            />
+          </div>
+          <div
+            v-if="events.length === 0"
+            class="no-events"
+          >
+            暂无异常事件
+          </div>
         </div>
-        <div
-          v-if="events.length === 0"
-          class="no-events text-center py-8 text-muted"
-        >
-          暂无异常事件
-        </div>
-      </div>
-    </UCard>
-  </UCard>
+      </UCard>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -342,6 +350,7 @@ const progressPercentage = computed(() => {
 const fps = ref(25)
 
 // 当前帧号（基于当前时间和帧率）
+// 使用 Math.floor 确保帧号在正确的范围内
 const currentFrame = computed(() => {
   return Math.floor(currentTime.value * fps.value) + 1
 })
@@ -545,6 +554,32 @@ const getEventTooltip = (event: Event): string => {
   return `${getEventTypeLabel(event.eventType)} - ${formatTime(timestamp)}`
 }
 
+// 获取事件的详细描述信息
+const getEventDetail = (event: Event): string => {
+  // 如果是粘连物掉落事件，显示掉落位置
+  if (event.eventType === 'ADHESION_DROPPED' && event.metadata?.dropped_location) {
+    const position = event.metadata.dropped_location as string
+    const positionMap: Record<string, string> = {
+      pool: '落入熔池内',
+      crystallizer: '结晶器捕获'
+    }
+    return positionMap[position] || position
+  }
+
+  // 如果是锭冠脱落事件，也显示掉落位置
+  if (event.eventType === 'CROWN_DROPPED' && event.metadata?.dropped_location) {
+    const position = event.metadata.dropped_location as string
+    const positionMap: Record<string, string> = {
+      pool: '落入熔池内',
+      crystallizer: '结晶器捕获'
+    }
+    return positionMap[position] || position
+  }
+
+  // 其他事件返回空字符串
+  return ''
+}
+
 // 获取类别中文名称
 const getCategoryLabel = (category: string): string => {
   const categoryMap: Record<string, string> = {
@@ -571,9 +606,10 @@ const getObjectTooltip = (obj: TrackingObject): string => {
 // 跳转到事件时间点
 const seekToEvent = (event: Event) => {
   if (videoPlayer.value) {
-    videoPlayer.value.currentTime = frameToTimestamp(event.startFrame)
+    // 跳转到事件开始帧的起始时间，加上小的偏移量
+    videoPlayer.value.currentTime = (event.startFrame - 1) / fps.value + 0.001
     if (!isPlaying.value) {
-      videoPlayer.value.play()
+      videoPlayer.value.pause()
     }
   }
 }
@@ -594,14 +630,24 @@ const onTimelineClick = (e: MouseEvent) => {
 const previousFrame = () => {
   if (!videoPlayer.value || currentFrame.value <= 1) return
   const targetFrame = currentFrame.value - 1
-  videoPlayer.value.currentTime = (targetFrame - 1) / fps.value
+  // 跳转到目标帧的起始时间，加上小的偏移量确保落在正确的帧内
+  videoPlayer.value.currentTime = (targetFrame - 1) / fps.value + 0.001
 }
 
 // 下一帧
 const nextFrame = () => {
   if (!videoPlayer.value || currentFrame.value >= totalFrames.value) return
   const targetFrame = currentFrame.value + 1
-  videoPlayer.value.currentTime = (targetFrame - 1) / fps.value
+  // 跳转到目标帧的起始时间，加上小的偏移量确保落在正确的帧内
+  videoPlayer.value.currentTime = (targetFrame - 1) / fps.value + 0.001
+}
+
+// 验证帧号输入（只允许数字）
+const validateFrameInput = (event: InputEvent) => {
+  const input = event.target as HTMLInputElement
+  // 只保留数字字符
+  input.value = input.value.replace(/[^0-9]/g, '')
+  currentFrameInput.value = input.value
 }
 
 // 跳转到指定帧
@@ -609,7 +655,7 @@ const jumpToFrame = () => {
   if (!videoPlayer.value) return
 
   const targetFrame = parseInt(currentFrameInput.value)
-  if (isNaN(targetFrame)) {
+  if (isNaN(targetFrame) || currentFrameInput.value === '') {
     // 如果输入无效，恢复为当前帧
     currentFrameInput.value = String(currentFrame.value)
     return
@@ -619,12 +665,33 @@ const jumpToFrame = () => {
   const clampedFrame = Math.max(1, Math.min(targetFrame, totalFrames.value))
   currentFrameInput.value = String(clampedFrame)
 
-  // 跳转到目标帧（帧号从1开始，时间从0开始）
-  videoPlayer.value.currentTime = (clampedFrame - 1) / fps.value
+  // 跳转到目标帧的起始时间（帧号从1开始，时间从0开始），加上小的偏移量
+  videoPlayer.value.currentTime = (clampedFrame - 1) / fps.value + 0.001
 }
 </script>
 
 <style scoped>
+/* 主容器 - 两栏布局 */
+.video-player-container {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1rem;
+  align-items: start;
+}
+
+/* 视频区域 */
+.video-section {
+  min-width: 0; /* 防止溢出 */
+}
+
+/* 事件列表区域 */
+.events-section {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
+}
+
 .video-wrapper {
   position: relative;
   width: 100%;
@@ -850,21 +917,21 @@ const jumpToFrame = () => {
 .timeline-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 
 .legend-color {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   border: 2px solid rgb(249, 250, 251);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   flex-shrink: 0;
 }
 
@@ -873,27 +940,63 @@ const jumpToFrame = () => {
 }
 
 .legend-text {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   white-space: nowrap;
+}
+
+/* 事件列表样式 */
+.events-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .events-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  max-height: 300px;
+  gap: 0.375rem;
+  max-height: calc(100vh - 12rem);
   overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+/* 滚动条样式 */
+.events-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.events-body::-webkit-scrollbar-track {
+  background: rgb(243, 244, 246);
+  border-radius: 3px;
+}
+
+:global(html.dark) .events-body::-webkit-scrollbar-track {
+  background: rgb(31, 41, 55);
+}
+
+.events-body::-webkit-scrollbar-thumb {
+  background: rgb(209, 213, 219);
+  border-radius: 3px;
+}
+
+:global(html.dark) .events-body::-webkit-scrollbar-thumb {
+  background: rgb(55, 65, 81);
+}
+
+.events-body::-webkit-scrollbar-thumb:hover {
+  background: rgb(156, 163, 175);
 }
 
 .event-item {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.75rem;
-  background: rgb(243, 244, 246);
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: rgb(249, 250, 251);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
 
 :global(html.dark) .event-item {
@@ -902,7 +1005,7 @@ const jumpToFrame = () => {
 
 .event-item:hover {
   background: rgb(229, 231, 235);
-  transform: translateX(4px);
+  transform: translateX(2px);
 }
 
 :global(html.dark) .event-item:hover {
@@ -910,31 +1013,85 @@ const jumpToFrame = () => {
 }
 
 .event-icon {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .event-info {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.125rem;
 }
 
 .event-type {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.event-detail {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: rgb(107, 114, 128);
+  white-space: nowrap;
+}
+
+:global(html.dark) .event-detail {
+  color: rgb(156, 163, 175);
 }
 
 .event-time {
   font-family: monospace;
-  font-size: 0.85rem;
+  font-size: 0.6875rem;
   color: rgb(107, 114, 128);
+  white-space: nowrap;
 }
 
 :global(html.dark) .event-time {
   color: rgb(156, 163, 175);
+}
+
+.event-arrow {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: rgb(156, 163, 175);
+  transition: transform 0.15s;
+}
+
+.event-item:hover .event-arrow {
+  transform: translateX(2px);
+  color: rgb(107, 114, 128);
+}
+
+.no-events {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: rgb(156, 163, 175);
+  font-size: 0.875rem;
+}
+
+/* 响应式布局 */
+@media (max-width: 1280px) {
+  .video-player-container {
+    grid-template-columns: 1fr;
+  }
+
+  .events-section {
+    position: static;
+    max-height: 400px;
+  }
+
+  .events-body {
+    max-height: 300px;
+  }
 }
 </style>

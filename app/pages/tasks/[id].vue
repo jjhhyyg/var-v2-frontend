@@ -618,16 +618,11 @@ const statsCards = computed(() => {
                 <span class="text-muted">超时比例:</span>
                 <UBadge color="neutral" size="sm">{{ task.config.timeoutRatio }}</UBadge>
               </div>
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-brain" class="w-4 h-4 text-muted" />
-                <span class="text-muted">模型版本:</span>
-                <UBadge color="neutral" size="sm">{{ task.config.modelVersion || '未知' }}</UBadge>
-              </div>
-              <div v-if="task.config.enablePreprocessing" class="flex items-center gap-2">
+              <!-- <div v-if="task.config.enablePreprocessing" class="flex items-center gap-2">
                 <UIcon name="i-lucide-filter" class="w-4 h-4 text-muted" />
                 <span class="text-muted">视频预处理:</span>
                 <UBadge color="primary" size="sm">已启用</UBadge>
-              </div>
+              </div> -->
               <div v-if="task.config.enablePreprocessing" class="flex items-center gap-2">
                 <UIcon name="i-lucide-gauge" class="w-4 h-4 text-muted" />
                 <span class="text-muted">预处理强度:</span>
@@ -880,42 +875,6 @@ const statsCards = computed(() => {
               </div>
             </template>
           </ClientOnly>
-        </div>
-      </UCard>
-
-      <!-- 异常事件列表（已完成） -->
-      <UCard v-if="result && result.anomalyEvents.length > 0">
-        <template #header>
-          <h2 class="text-xl font-semibold">异常事件</h2>
-        </template>
-
-        <div class="space-y-2">
-          <div
-            v-for="event in result.anomalyEvents"
-            :key="event.eventId"
-            class="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
-          >
-            <div class="flex items-start justify-between">
-              <div class="flex-1">
-                <div class="flex items-center gap-2 mb-2">
-                  <UBadge color="error">
-                    {{ eventTypeMap[event.eventType] || event.eventType }}
-                  </UBadge>
-                  <span class="text-sm text-muted">
-                    {{ frameToTime(event.startFrame) }} -
-                    {{ frameToTime(event.endFrame) }}
-                  </span>
-                </div>
-                <p class="text-sm">
-                  帧范围: {{ event.startFrame }} - {{ event.endFrame }}
-                  <span v-if="event.objectId" class="ml-2"> 物体ID: {{ event.objectId }} </span>
-                </p>
-                <div v-if="event.metadata" class="mt-2 text-sm text-muted">
-                  <pre class="bg-muted/50 p-2 rounded">{{ JSON.stringify(event.metadata, null, 2) }}</pre>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </UCard>
 
