@@ -267,19 +267,20 @@ const handleTaskUpdate = async (update: { taskId: string, status: string, progre
   }
 }
 
-// 页面加载时获取任务列表
+// 页面加载时先连接WebSocket，再获取任务列表
 onMounted(async () => {
-  await loadTasks()
-
-  // 连接WebSocket并订阅任务列表更新
+  // 先连接WebSocket，确保后续订阅能够成功
   try {
     await connect()
     unsubscribeUpdates = subscribeToTaskUpdates(handleTaskUpdate)
-    console.log('已订阅任务列表更新')
+    console.log('WebSocket已连接，已订阅任务列表更新')
   } catch (error) {
     console.error('WebSocket连接失败:', error)
     // WebSocket连接失败不影响基本功能，只是无法实时更新
   }
+
+  // WebSocket连接后再加载任务列表（会自动订阅每个任务的进度）
+  await loadTasks()
 })
 
 // 清理
