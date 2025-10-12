@@ -2,6 +2,21 @@
 import { onMounted, onUnmounted } from 'vue'
 import type { Task, TaskResult, TaskStatus, TrackingObject } from '~/composables/useTaskApi'
 
+// 轨迹点接口
+interface TrajectoryPoint {
+  bbox: [number, number, number, number]
+  frame: number
+  confidence: number
+}
+
+// 边界框接口
+interface Bounds {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
 const route = useRoute()
 const { getTask, getTaskStatus, getTaskResult, reanalyzeTask } = useTaskApi()
 const { connect, disconnect, subscribeToTask, subscribeToTaskDetailUpdate, isConnected } = useWebSocket()
@@ -88,7 +103,7 @@ const currentTrajectoryPoint = computed(() => {
 })
 
 // 计算轨迹边界框
-const getTrajectoryBounds = (trajectory: any[]) => {
+const getTrajectoryBounds = (trajectory: TrajectoryPoint[]): Bounds => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
 
   for (const point of trajectory) {
@@ -276,7 +291,7 @@ const updateTrajectoryCanvas = () => {
 }
 
 // 绘制网格和坐标轴
-const drawGrid = (ctx: CanvasRenderingContext2D, bounds: any, scale: number) => {
+const drawGrid = (ctx: CanvasRenderingContext2D, bounds: Bounds, scale: number) => {
   const { minX, minY, maxX, maxY } = bounds
 
   // 根据缩放级别调整网格间距

@@ -53,7 +53,7 @@
             v-show="!videoError && !videoLoading"
             ref="videoPlayer"
             class="video-element"
-            controls
+            @click="togglePlay"
             @timeupdate="onTimeUpdate"
             @loadedmetadata="onLoadedMetadata"
             @play="isPlaying = true"
@@ -68,6 +68,23 @@
             >
             您的浏览器不支持视频播放
           </video>
+
+          <!-- 播放/暂停覆盖层 -->
+          <div
+            v-if="!videoError && !videoLoading"
+            class="video-overlay"
+            @click="togglePlay"
+          >
+            <div
+              v-show="!isPlaying"
+              class="play-button-overlay"
+            >
+              <UIcon
+                name="i-lucide-play"
+                class="play-icon"
+              />
+            </div>
+          </div>
         </div>
 
         <!-- 控制栏 -->
@@ -164,6 +181,7 @@
           ref="timeline"
           class="timeline"
           @click="onTimelineClick"
+          @mousedown="onTimelineMouseDown"
         >
           <!-- 进度条 -->
           <div
@@ -248,46 +266,81 @@
     <div class="events-section">
       <UCard>
         <template #header>
-          <div class="events-header">
+          <div class="flex items-center justify-between gap-2">
             <h3 class="font-semibold text-sm">
               异常事件列表
             </h3>
-            <span class="text-xs text-muted">{{ events.length }} 个</span>
+            <UBadge variant="subtle" color="neutral" size="sm">
+              {{ events.length }} 个
+            </UBadge>
           </div>
         </template>
 
-        <div class="events-body">
+        <div class="events-list-wrapper">
+          <UPageList v-if="events.length > 0" divide>
+            <UPageCard
+              v-for="event in sortedEvents"
+              :key="event.eventId"
+              :variant="selectedEventId === event.eventId ? 'subtle' : 'ghost'"
+              class="event-card-item"
+              :class="{ 'event-card-selected': selectedEventId === event.eventId }"
+              @click="seekToEvent(event)"
+            >
+              <template #body>
+                <div class="flex items-center gap-3 w-full">
+                  <!-- 事件类型指示器 -->
+                  <div
+                    class="event-indicator"
+                    :class="getEventClass(event.eventType)"
+                  />
+
+                  <!-- 事件信息 -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap mb-1">
+                      <UBadge
+                        :color="getEventBadgeColor(event.eventType)"
+                        variant="soft"
+                        size="sm"
+                      >
+                        {{ getEventTypeLabel(event.eventType) }}
+                      </UBadge>
+                      <span
+                        v-if="getEventDetail(event)"
+                        class="text-xs text-muted"
+                      >
+                        {{ getEventDetail(event) }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-1.5 text-xs text-muted font-mono">
+                      <UIcon name="i-lucide-clock" class="w-3 h-3" />
+                      <span>
+                        {{ formatTime(frameToTimestamp(event.startFrame)) }} - {{ formatTime(frameToTimestamp(event.endFrame)) }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 跳转箭头 -->
+                  <UIcon
+                    name="i-lucide-chevron-right"
+                    class="w-4 h-4 text-muted flex-shrink-0 transition-transform group-hover:translate-x-0.5"
+                  />
+                </div>
+              </template>
+            </UPageCard>
+          </UPageList>
+
+          <!-- 空状态 -->
           <div
-            v-for="event in sortedEvents"
-            :key="event.eventId"
-            class="event-item"
-            @click="seekToEvent(event)"
+            v-else
+            class="flex flex-col items-center justify-center py-12 text-center"
           >
-            <div
-              class="event-icon"
-              :class="getEventClass(event.eventType)"
-            />
-            <div class="event-info">
-              <div class="event-type">
-                {{ getEventTypeLabel(event.eventType) }}
-                <span v-if="getEventDetail(event)" class="event-detail">
-                  ({{ getEventDetail(event) }})
-                </span>
-              </div>
-              <div class="event-time">
-                {{ formatTime(frameToTimestamp(event.startFrame)) }} - {{ formatTime(frameToTimestamp(event.endFrame)) }}
-              </div>
-            </div>
             <UIcon
-              name="i-lucide-chevron-right"
-              class="event-arrow"
+              name="i-lucide-check-circle"
+              class="w-12 h-12 text-muted mb-3"
             />
-          </div>
-          <div
-            v-if="events.length === 0"
-            class="no-events"
-          >
-            暂无异常事件
+            <p class="text-sm text-muted">
+              暂无异常事件
+            </p>
           </div>
         </div>
       </UCard>
@@ -340,6 +393,10 @@ const videoError = ref(false)
 const videoErrorMessage = ref('')
 const videoLoading = ref(true)
 const currentFrameInput = ref('1')
+const selectedEventId = ref<string | null>(null)
+const isDraggingTimeline = ref(false)
+const wasPlayingBeforeDrag = ref(false)
+const dragTimePercentage = ref(0)
 
 // 获取后端API基础URL
 const { baseURL } = useApi()
@@ -352,6 +409,10 @@ const currentVideoUrl = computed(() => {
 })
 
 const progressPercentage = computed(() => {
+  // 拖动时使用拖动进度，否则使用实际播放进度
+  if (isDraggingTimeline.value) {
+    return dragTimePercentage.value
+  }
   if (duration.value === 0) return 0
   return (currentTime.value / duration.value) * 100
 })
@@ -480,6 +541,17 @@ const retryLoadVideo = () => {
   }
 }
 
+// 切换播放/暂停
+const togglePlay = () => {
+  if (!videoPlayer.value) return
+
+  if (isPlaying.value) {
+    videoPlayer.value.pause()
+  } else {
+    videoPlayer.value.play()
+  }
+}
+
 // 格式化时间
 const formatTime = (seconds: number): string => {
   const h = Math.floor(seconds / 3600)
@@ -529,6 +601,20 @@ const getEventClass = (eventType: string): string => {
     CREEPING_ARC: 'event-creeping-arc'
   }
   return typeMap[eventType] || 'event-default'
+}
+
+// 获取事件徽章颜色
+const getEventBadgeColor = (eventType: string): 'error' | 'info' | 'success' | 'primary' | 'secondary' | 'warning' | 'neutral' => {
+  const colorMap: Record<string, 'error' | 'info' | 'success' | 'primary' | 'secondary' | 'warning' | 'neutral'> = {
+    POOL_NOT_REACHED: 'success',
+    ADHESION_FORMED: 'error',
+    ADHESION_DROPPED: 'warning',
+    CROWN_DROPPED: 'primary',
+    GLOW: 'info',
+    SIDE_ARC: 'secondary',
+    CREEPING_ARC: 'warning'
+  }
+  return colorMap[eventType] || 'neutral'
 }
 
 // 获取物体样式类
@@ -615,6 +701,9 @@ const getObjectTooltip = (obj: TrackingObject): string => {
 
 // 跳转到事件时间点
 const seekToEvent = (event: Event) => {
+  // 设置选中的事件
+  selectedEventId.value = event.eventId
+
   if (videoPlayer.value) {
     // 跳转到事件开始帧的起始时间，加上小的偏移量
     videoPlayer.value.currentTime = (event.startFrame - 1) / fps.value + 0.001
@@ -626,14 +715,86 @@ const seekToEvent = (event: Event) => {
 
 // 点击时间轴
 const onTimelineClick = (e: MouseEvent) => {
+  // 如果正在拖动，不处理点击事件
+  if (isDraggingTimeline.value) return
+
   if (!timeline.value || !videoPlayer.value) return
 
   const rect = timeline.value.getBoundingClientRect()
   const x = e.clientX - rect.left
   const percentage = x / rect.width
-  const newTime = percentage * duration.value
+  const newTime = Math.max(0, Math.min(percentage * duration.value, duration.value))
 
-  videoPlayer.value.currentTime = Math.max(0, Math.min(newTime, duration.value))
+  // 立即更新 currentTime ref，避免视觉闪烁
+  currentTime.value = newTime
+  // 同时更新视频元素的时间
+  videoPlayer.value.currentTime = newTime
+}
+
+// 计算时间轴位置百分比
+const calculateTimelinePercentage = (e: MouseEvent): number => {
+  if (!timeline.value) return 0
+
+  const rect = timeline.value.getBoundingClientRect()
+  const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
+  return (x / rect.width) * 100
+}
+
+// 鼠标按下时间轴
+const onTimelineMouseDown = (e: MouseEvent) => {
+  isDraggingTimeline.value = true
+
+  // 记录拖动前的播放状态
+  wasPlayingBeforeDrag.value = isPlaying.value
+
+  // 如果正在播放，先暂停
+  if (isPlaying.value && videoPlayer.value) {
+    videoPlayer.value.pause()
+  }
+
+  // 只更新视觉进度
+  dragTimePercentage.value = calculateTimelinePercentage(e)
+
+  // 添加全局鼠标事件监听
+  document.addEventListener('mousemove', onTimelineMouseMove)
+  document.addEventListener('mouseup', onTimelineMouseUp)
+}
+
+// 鼠标移动 - 只更新视觉进度，不更新视频
+const onTimelineMouseMove = (e: MouseEvent) => {
+  if (isDraggingTimeline.value) {
+    // 只更新视觉进度，不触发视频跳转
+    dragTimePercentage.value = calculateTimelinePercentage(e)
+  }
+}
+
+// 鼠标松开 - 此时才真正更新视频位置
+const onTimelineMouseUp = () => {
+  if (isDraggingTimeline.value && videoPlayer.value) {
+    // 计算最终位置并更新视频
+    const percentage = dragTimePercentage.value / 100
+    const newTime = Math.max(0, Math.min(percentage * duration.value, duration.value))
+
+    // 立即更新 currentTime ref，避免视觉闪烁
+    currentTime.value = newTime
+    // 同时更新视频元素的时间
+    videoPlayer.value.currentTime = newTime
+  }
+
+  // 延迟重置拖动状态，确保 UI 已经使用新的 currentTime
+  nextTick(() => {
+    isDraggingTimeline.value = false
+  })
+
+  // 如果拖动前是播放状态，恢复播放
+  if (wasPlayingBeforeDrag.value && videoPlayer.value) {
+    videoPlayer.value.play()
+  }
+  wasPlayingBeforeDrag.value = false
+
+  // 移除全局鼠标事件监听
+  document.removeEventListener('mousemove', onTimelineMouseMove)
+  document.removeEventListener('mouseup', onTimelineMouseUp)
 }
 
 // 上一帧
@@ -719,6 +880,51 @@ const jumpToFrame = () => {
   width: 100%;
   height: auto;
   display: block;
+  cursor: pointer;
+}
+
+/* 视频播放覆盖层 */
+.video-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 1rem;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.video-overlay:hover {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.play-button-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  pointer-events: auto;
+}
+
+.play-button-overlay:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.1);
+}
+
+.play-icon {
+  width: 24px;
+  height: 24px;
+  color: white;
+  margin-left: 2px; /* 视觉居中调整 */
 }
 
 /* 视频错误占位符 */
@@ -859,6 +1065,11 @@ const jumpToFrame = () => {
   border-radius: 4px;
   cursor: pointer;
   overflow: hidden;
+  user-select: none;
+}
+
+.timeline:active {
+  cursor: grabbing;
 }
 
 :global(html.dark) .timeline {
@@ -1008,138 +1219,61 @@ const jumpToFrame = () => {
 }
 
 /* 事件列表样式 */
-.events-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.events-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
+.events-list-wrapper {
   max-height: calc(100vh - 12rem);
   overflow-y: auto;
-  padding-right: 0.25rem;
+  padding: 0.25rem;
+  margin: -0.25rem;
 }
 
 /* 滚动条样式 */
-.events-body::-webkit-scrollbar {
+.events-list-wrapper::-webkit-scrollbar {
   width: 6px;
 }
 
-.events-body::-webkit-scrollbar-track {
-  background: rgb(243, 244, 246);
+.events-list-wrapper::-webkit-scrollbar-track {
+  background: transparent;
   border-radius: 3px;
 }
 
-:global(html.dark) .events-body::-webkit-scrollbar-track {
-  background: rgb(31, 41, 55);
-}
-
-.events-body::-webkit-scrollbar-thumb {
+.events-list-wrapper::-webkit-scrollbar-thumb {
   background: rgb(209, 213, 219);
   border-radius: 3px;
 }
 
-:global(html.dark) .events-body::-webkit-scrollbar-thumb {
+:global(html.dark) .events-list-wrapper::-webkit-scrollbar-thumb {
   background: rgb(55, 65, 81);
 }
 
-.events-body::-webkit-scrollbar-thumb:hover {
+.events-list-wrapper::-webkit-scrollbar-thumb:hover {
   background: rgb(156, 163, 175);
 }
 
-.event-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.625rem;
-  background: rgb(249, 250, 251);
-  border-radius: 6px;
+/* 事件卡片项样式 */
+.event-card-item {
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s ease;
 }
 
-:global(html.dark) .event-item {
-  background: rgb(31, 41, 55);
-}
-
-.event-item:hover {
-  background: rgb(229, 231, 235);
+.event-card-item:hover {
   transform: translateX(2px);
 }
 
-:global(html.dark) .event-item:hover {
-  background: rgb(55, 65, 81);
+/* 选中的事件卡片样式 */
+.event-card-selected {
+  border-left: 3px solid rgb(59, 130, 246);
 }
 
-.event-icon {
+:global(html.dark) .event-card-selected {
+  border-left-color: rgb(96, 165, 250);
+}
+
+/* 事件指示器样式 */
+.event-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.event-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-}
-
-.event-type {
-  font-weight: 500;
-  font-size: 0.8125rem;
-  line-height: 1.3;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex-wrap: wrap;
-}
-
-.event-detail {
-  font-weight: 400;
-  font-size: 0.75rem;
-  color: rgb(107, 114, 128);
-  white-space: nowrap;
-}
-
-:global(html.dark) .event-detail {
-  color: rgb(156, 163, 175);
-}
-
-.event-time {
-  font-family: monospace;
-  font-size: 0.6875rem;
-  color: rgb(107, 114, 128);
-  white-space: nowrap;
-}
-
-:global(html.dark) .event-time {
-  color: rgb(156, 163, 175);
-}
-
-.event-arrow {
-  flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  color: rgb(156, 163, 175);
-  transition: transform 0.15s;
-}
-
-.event-item:hover .event-arrow {
-  transform: translateX(2px);
-  color: rgb(107, 114, 128);
-}
-
-.no-events {
-  text-align: center;
-  padding: 3rem 1rem;
-  color: rgb(156, 163, 175);
-  font-size: 0.875rem;
 }
 
 /* 响应式布局 */
@@ -1153,7 +1287,7 @@ const jumpToFrame = () => {
     max-height: 400px;
   }
 
-  .events-body {
+  .events-list-wrapper {
     max-height: 300px;
   }
 }
