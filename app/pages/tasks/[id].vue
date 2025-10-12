@@ -758,6 +758,12 @@ const statsCards = computed(() => {
                   {{ isConnected ? 'WS已连接' : 'WS未连接' }}
                 </div>
               </UBadge>
+              <!-- 报告生成按钮 -->
+              <ReportGenerator
+                v-if="(task.status === 'COMPLETED' || task.status === 'COMPLETED_TIMEOUT') && result"
+                :task="task"
+                :result="result"
+              />
               <!-- 重新分析按钮 -->
               <UButton
                 v-if="task.status === 'COMPLETED' || task.status === 'COMPLETED_TIMEOUT' || task.status === 'FAILED'"
