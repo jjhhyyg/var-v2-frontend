@@ -5,7 +5,7 @@ export default defineNuxtConfig({
   ssr: false,
 
   devtools: {
-    enabled: true
+    enabled: false
   },
 
   css: ['~/assets/css/main.css'],
@@ -23,10 +23,10 @@ export default defineNuxtConfig({
     transpile: ['echarts', 'vue-echarts']
   },
 
-  routeRules: {
-    '/': { ssr: false },
-    '/tasks/**': { ssr: false }
-  },
+  // routeRules: {
+  //   '/': { ssr: false },
+  //   '/tasks/**': { ssr: false }
+  // },
 
   compatibilityDate: '2025-01-15',
 

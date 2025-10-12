@@ -33,7 +33,7 @@ export const useWebSocket = () => {
         return
       }
 
-      const baseUrl = config.public.apiBase || 'http://localhost:8080'
+      const baseUrl = config.public.apiBase ?? 'http://localhost:8080'
       const wsUrl = `${baseUrl}/ws`
 
       const client = new Client({

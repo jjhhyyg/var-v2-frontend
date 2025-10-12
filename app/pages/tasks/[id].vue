@@ -911,6 +911,9 @@ const statsCards = computed(() => {
             <div v-if="status.timeoutWarning">
               <UBadge color="warning"> 即将超时 </UBadge>
             </div>
+            <div v-if="status.isTimeout">
+              <UBadge color="warning"> 已超时 </UBadge>
+            </div>
           </div>
         </div>
       </UCard>
