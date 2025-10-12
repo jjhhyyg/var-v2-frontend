@@ -237,8 +237,8 @@ const option = computed<EChartsOption>(() => {
             width: 2
           },
           label: {
-            position: 'end',
-            formatter: `平均: ${average} ${config.unit}`
+            position: 'insideEndBottom',
+            formatter: ``
           },
           data: [
             {

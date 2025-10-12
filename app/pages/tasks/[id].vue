@@ -586,7 +586,8 @@ const formatTime = (seconds?: number) => {
 }
 
 // 帧号转时间戳
-const frameToTime = (frame: number, fps = 25) => {
+const frameToTime = (frame: number) => {
+  const fps = task.value?.config?.frameRate ?? 25
   const seconds = frame / fps
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
@@ -739,24 +740,18 @@ const statsCards = computed(() => {
         <template #header>
           <div class="flex items-center justify-between">
             <div>
-              <h1 class="text-2xl font-bold">
-                {{ task.name }}
-              </h1>
-              <p class="text-sm text-muted mt-1">任务ID: {{ task.taskId }}</p>
+                <div>
+                  <h1 class="text-2xl font-bold">
+                    {{ task.name }}
+                  </h1>
+                  <p class="text-sm text-muted mt-1">任务ID: {{ task.taskId }}</p>
+                </div>
+                <div>
+              </div>
             </div>
             <div class="flex items-center gap-2">
               <UBadge :color="getStatusColor(task.status)" size="lg">
                 {{ getStatusText(task.status) }}
-              </UBadge>
-              <UBadge :color="isConnected ? 'success' : 'neutral'" size="sm">
-                <div class="flex items-center gap-1">
-                  <span
-                    :class="
-                      isConnected ? 'w-1.5 h-1.5 bg-green-500 rounded-full' : 'w-1.5 h-1.5 bg-gray-400 rounded-full'
-                    "
-                  />
-                  {{ isConnected ? 'WS已连接' : 'WS未连接' }}
-                </div>
               </UBadge>
               <!-- 报告生成按钮 -->
               <ReportGenerator
@@ -948,6 +943,7 @@ const statsCards = computed(() => {
         <VideoPlayer
           :task-id="taskId"
           :video-duration="task.videoDuration"
+          :frame-rate="task.config?.frameRate"
           :result-video-path="task.resultVideoPath"
           :preprocessed-video-path="task.preprocessedVideoPath"
           :events="result.anomalyEvents"
@@ -1023,22 +1019,6 @@ const statsCards = computed(() => {
               平均值:
               {{ result.globalAnalysis['周长'].mean?.toFixed(1) || '-' }} px
             </p>
-          </div>
-
-          <!-- 圆度 -->
-          <div
-            v-if="result.globalAnalysis['圆度']"
-            class="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg border border-purple-200 dark:border-purple-800"
-          >
-            <div class="flex items-center gap-2 mb-2">
-              <UIcon name="i-lucide-circle-dot" class="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              <h3 class="font-semibold text-purple-900 dark:text-purple-100">平均圆度</h3>
-            </div>
-            <p class="text-2xl font-bold text-purple-900 dark:text-purple-100 mb-1">
-              {{ result.globalAnalysis['圆度'].mean?.toFixed(3) || '-' }}
-            </p>
-            <p class="text-sm text-purple-700 dark:text-purple-300">形状稳定性指标</p>
-            <p class="text-xs text-purple-600 dark:text-purple-400 mt-1">基于净面积与外周长</p>
           </div>
         </div>
       </UCard>

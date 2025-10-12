@@ -8,6 +8,7 @@
 export interface TaskConfig {
   timeoutRatio?: string
   modelVersion?: string
+  frameRate?: number
   enablePreprocessing?: boolean
   preprocessingStrength?: string
   preprocessingEnhancePool?: boolean

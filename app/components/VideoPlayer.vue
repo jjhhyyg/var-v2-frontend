@@ -372,6 +372,7 @@ interface TrackingObject {
 interface Props {
   taskId: string
   videoDuration: number
+  frameRate?: number
   resultVideoPath?: string
   preprocessedVideoPath?: string
   events?: Event[]
@@ -379,6 +380,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  frameRate: 25,
   events: () => [],
   trackingObjects: () => []
 })
@@ -417,8 +419,8 @@ const progressPercentage = computed(() => {
   return (currentTime.value / duration.value) * 100
 })
 
-// 视频帧率（假设25fps，实际应从视频元数据获取）
-const fps = ref(25)
+// 从props获取视频帧率
+const fps = computed(() => props.frameRate)
 
 // 当前帧号（基于当前时间和帧率）
 // 使用 Math.floor 确保帧号在正确的范围内

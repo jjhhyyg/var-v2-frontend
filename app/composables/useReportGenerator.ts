@@ -1,10 +1,11 @@
 /**
  * 报告生成工具
  * 支持将任务分析结果导出为 HTML 和 PDF 格式
+ * 直接生成静态HTML，使用echarts的getDataURL方法导出图表
  */
 import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
-import type { Task, TaskResult, DynamicMetric, AnomalyEvent } from './useTaskApi'
+import * as echarts from 'echarts/core'
+import type { Task, TaskResult } from './useTaskApi'
 
 export interface ReportData {
   task: Task
@@ -12,36 +13,20 @@ export interface ReportData {
   fps: number // 视频帧率
 }
 
-export interface CircularityMetric {
-  frameNumber: number
-  timestamp: number
-  circularity: number
+// 事件类型映射（与ReportPreview.vue保持一致）
+const eventTypeMap: Record<string, string> = {
+  POOL_NOT_REACHED: '熔池未到边',
+  ADHESION_FORMED: '电极形成粘连物',
+  ADHESION_DROPPED: '电极粘连物脱落',
+  CROWN_DROPPED: '锭冠脱落',
+  GLOW: '辉光',
+  SIDE_ARC: '边弧',
+  CREEPING_ARC: '爬弧'
 }
 
 export function useReportGenerator() {
   /**
-   * 计算圆度 (4π × 面积 / 周长²)
-   * 圆度值范围 0-1，1 表示完美的圆形
-   */
-  const calculateCircularity = (area: number, perimeter: number): number => {
-    if (perimeter === 0) return 0
-    const circularity = (4 * Math.PI * area) / (perimeter * perimeter)
-    return Math.min(circularity, 1) // 确保不超过 1
-  }
-
-  /**
-   * 计算所有帧的圆度数据
-   */
-  const calculateCircularityMetrics = (metrics: DynamicMetric[]): CircularityMetric[] => {
-    return metrics.map(m => ({
-      frameNumber: m.frameNumber,
-      timestamp: m.timestamp,
-      circularity: calculateCircularity(m.poolArea || 0, m.poolPerimeter || 0)
-    }))
-  }
-
-  /**
-   * 计算平均值
+   * 计算平均值（与ReportPreview.vue保持一致）
    */
   const calculateAverage = (values: number[]): number => {
     if (values.length === 0) return 0
@@ -50,569 +35,682 @@ export function useReportGenerator() {
   }
 
   /**
-   * 格式化时间戳为 HH:MM:SS.mmm
+   * 计算趋势（与ReportPreview.vue保持一致）
    */
-  const formatTimestamp = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
+  const calculateTrend = (values: number[]): string => {
+    if (values.length < 2) return '数据不足'
+
+    const firstHalf = values.slice(0, Math.floor(values.length / 2))
+    const secondHalf = values.slice(Math.floor(values.length / 2))
+
+    const avgFirst = calculateAverage(firstHalf)
+    const avgSecond = calculateAverage(secondHalf)
+
+    const diff = avgSecond - avgFirst
+    const changePercent = (diff / avgFirst) * 100
+
+    if (Math.abs(changePercent) < 5) {
+      return '平稳'
+    } else if (diff > 0) {
+      return `上升 (${changePercent.toFixed(1)}%)`
+    } else {
+      return `下降 (${Math.abs(changePercent).toFixed(1)}%)`
+    }
+  }
+
+  /**
+   * 格式化帧号为时间（与ReportPreview.vue保持一致）
+   */
+  const formatFrameToTime = (frame: number, fps: number): string => {
+    const seconds = frame / fps
+    const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
-    const ms = Math.floor((seconds % 1) * 1000)
-
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`
+    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
   /**
-   * 格式化日期时间
-   */
-  const formatDateTime = (dateStr?: string): string => {
-    if (!dateStr) return '-'
-    const date = new Date(dateStr)
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    })
-  }
-
-  /**
-   * 计算任务耗时（秒）
-   */
-  const calculateDuration = (startTime?: string, endTime?: string): number => {
-    if (!startTime || !endTime) return 0
-    const start = new Date(startTime).getTime()
-    const end = new Date(endTime).getTime()
-    return (end - start) / 1000
-  }
-
-  /**
-   * 格式化耗时为易读格式
+   * 格式化耗时（与ReportPreview.vue保持一致）
    */
   const formatDuration = (seconds: number): string => {
     if (seconds === 0) return '-'
-
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
     const secs = Math.floor(seconds % 60)
 
-    const parts: string[] = []
-    if (hours > 0) parts.push(`${hours}小时`)
-    if (minutes > 0) parts.push(`${minutes}分钟`)
-    if (secs > 0 || parts.length === 0) parts.push(`${secs}秒`)
-
-    return parts.join('')
+    if (hours > 0) {
+      return `${hours}小时${minutes}分钟${secs}秒`
+    }
+    if (minutes > 0) {
+      return `${minutes}分钟${secs}秒`
+    }
+    return `${secs}秒`
   }
 
   /**
-   * 获取异常事件的描述信息
+   * 等待所有echarts图表渲染完成
    */
-  const getEventDescription = (event: AnomalyEvent, fps: number): string => {
-    const startTime = formatTimestamp(event.startFrame / fps)
-    const endTime = formatTimestamp(event.endFrame / fps)
-    const duration = ((event.endFrame - event.startFrame) / fps).toFixed(2)
+  const waitForChartsReady = async (): Promise<void> => {
+    await nextTick()
+    // 等待echarts完成渲染
+    await new Promise(resolve => setTimeout(resolve, 800))
+  }
 
-    let description = `时段: ${startTime} - ${endTime} (${duration}秒)`
+  /**
+   * 从DOM中获取所有echarts实例并导出为base64图片
+   */
+  const getChartImages = async (): Promise<string[]> => {
+    const chartContainers = document.querySelectorAll('.metrics-chart-container')
+    const images: string[] = []
 
-    // 特殊处理粘连物掉落事件
-    if (event.eventType === 'ADHESION_DROP' && event.metadata) {
-      const dropLocation = event.metadata.drop_location as string
-      if (dropLocation === 'pool') {
-        description += ' | 掉落位置: 熔池中'
-      } else if (dropLocation === 'mold') {
-        description += ' | 掉落位置: 被结晶器捕获'
+    for (const container of Array.from(chartContainers)) {
+      let chartInstance = null
+
+      // 尝试多种方式查找echarts实例
+      // 方式1: 直接在容器上查找
+      chartInstance = echarts.getInstanceByDom(container as HTMLElement)
+
+      // 方式2: 在容器的第一个子元素上查找（VChart通常渲染为第一个子div）
+      if (!chartInstance && container.firstElementChild) {
+        chartInstance = echarts.getInstanceByDom(container.firstElementChild as HTMLElement)
+      }
+
+      // 方式3: 查找包含canvas的元素
+      if (!chartInstance) {
+        const canvas = container.querySelector('canvas')
+        if (canvas && canvas.parentElement) {
+          chartInstance = echarts.getInstanceByDom(canvas.parentElement)
+        }
+      }
+
+      if (chartInstance) {
+        try {
+          const base64 = chartInstance.getDataURL({
+            type: 'png',
+            pixelRatio: 2,
+            backgroundColor: '#ffffff'
+          })
+          images.push(base64)
+        } catch (error) {
+          console.error('获取图表图片失败:', error)
+        }
+      } else {
+        console.warn('未找到图表实例:', container)
       }
     }
 
-    return description
+    return images
   }
 
   /**
-   * 获取事件类型的中文名称
+   * 生成图表HTML（直接嵌入base64图片）
    */
-  const getEventTypeName = (eventType: string): string => {
-    const typeMap: Record<string, string> = {
-      ADHESION_FORMATION: '粘连物形成',
-      ADHESION_DROP: '粘连物掉落',
-      INGOT_CROWN_DROP: '锭冠脱落',
-      POOL_NOT_REACH_EDGE: '熔池未到边',
-      POOL_REACH_EDGE: '熔池到边',
-      POOL_OVERFLOW: '熔池溢出'
-    }
-    return typeMap[eventType] || eventType
+  const generateChartHTML = (imageBase64: string, title: string, average: string, trend: string, unit: string): string => {
+    return `
+      <div>
+        <div class="flex justify-between items-center mb-3">
+          <h4 class="text-base font-medium">${title}</h4>
+          <div class="text-sm text-muted">
+            <span class="mr-4"><strong>${average}</strong> ${unit}</span>
+            <span>变化趋势: <strong>${trend}</strong></span>
+          </div>
+        </div>
+        <div class="metrics-chart-container">
+          <img src="${imageBase64}">
+        </div>
+        <hr>
+      </div>
+    `
   }
 
   /**
-   * 生成 HTML 报告
+   * 导出为 HTML
+   * 直接生成静态HTML，数据处理逻辑与ReportPreview.vue完全一致
    */
-  const generateHTMLReport = (data: ReportData): string => {
-    const { task, result, fps } = data
+  const exportToHTML = async (data: ReportData) => {
+    try {
+      // 等待图表渲染完成
+      await waitForChartsReady()
 
-    // 计算圆度数据
-    const circularityMetrics = calculateCircularityMetrics(result.dynamicMetrics)
-    const avgCircularity = calculateAverage(circularityMetrics.map(c => c.circularity))
+      // 获取所有图表的base64图片
+      const chartImages = await getChartImages()
 
-    // 计算各项平均值
-    const avgBrightness = calculateAverage(result.dynamicMetrics.map(m => m.brightness || 0))
-    const avgArea = calculateAverage(result.dynamicMetrics.map(m => m.poolArea || 0))
-    const avgPerimeter = calculateAverage(result.dynamicMetrics.map(m => m.poolPerimeter || 0))
-
-    // 按类型分组异常事件
-    const eventsByType = new Map<string, AnomalyEvent[]>()
-    result.anomalyEvents.forEach((event) => {
-      const typeName = getEventTypeName(event.eventType)
-      if (!eventsByType.has(typeName)) {
-        eventsByType.set(typeName, [])
+      // 计算任务耗时
+      let taskDuration = 0
+      if (data.task.startedAt && data.task.completedAt) {
+        const start = new Date(data.task.startedAt).getTime()
+        const end = new Date(data.task.completedAt).getTime()
+        taskDuration = (end - start) / 1000
       }
-      eventsByType.get(typeName)!.push(event)
-    })
 
-    const html = `
+      // 计算各项平均值和趋势（与ReportPreview.vue保持一致）
+      const brightnessValues = data.result.dynamicMetrics.map(m => m.brightness || 0)
+      const areaValues = data.result.dynamicMetrics.map(m => m.poolArea || 0)
+      const perimeterValues = data.result.dynamicMetrics.map(m => m.poolPerimeter || 0)
+
+      const avgBrightness = calculateAverage(brightnessValues)
+      const avgArea = calculateAverage(areaValues)
+      const avgPerimeter = calculateAverage(perimeterValues)
+
+      const brightnessTrend = calculateTrend(brightnessValues)
+      const areaTrend = calculateTrend(areaValues)
+      const perimeterTrend = calculateTrend(perimeterValues)
+
+      // 按时间段分组事件（与ReportPreview.vue保持一致）
+      const groupedEvents = data.result.anomalyEvents.map((event) => {
+        const startTime = formatFrameToTime(event.startFrame, data.fps)
+        const endTime = formatFrameToTime(event.endFrame, data.fps)
+        const durationFrames = event.endFrame - event.startFrame
+        const durationSeconds = durationFrames / data.fps
+        const duration = durationSeconds.toFixed(1) + '秒'
+
+        return {
+          eventType: eventTypeMap[event.eventType] || event.eventType,
+          startTime,
+          endTime,
+          duration,
+          metadata: event.metadata
+        }
+      })
+
+      // 生成完整的HTML文档
+      const htmlContent = `
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VAR熔池分析报告 - ${task.name}</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>熔池分析报告 - ${data.task.name}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-        body {
-            font-family: "Microsoft YaHei", "SimHei", Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f5f5;
-            padding: 20px;
-        }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background: #f5f5f5;
+      padding: 20px;
+    }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            padding: 40px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
 
-        .header {
-            text-align: center;
-            border-bottom: 3px solid #2563eb;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
+    h1 {
+      text-align: center;
+      color: #1a1a1a;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
 
-        .header h1 {
-            font-size: 28px;
-            color: #1e40af;
-            margin-bottom: 10px;
-        }
+    h2 {
+      color: #2c3e50;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #3b82f6;
+      font-size: 20px;
+    }
 
-        .header .subtitle {
-            font-size: 14px;
-            color: #6b7280;
-        }
+    h3 {
+      color: #34495e;
+      margin-top: 20px;
+      margin-bottom: 10px;
+      font-size: 18px;
+      font-weight: 600;
+    }
 
-        .section {
-            margin-bottom: 30px;
-        }
+    h4 {
+      color: #475569;
+      margin-top: 15px;
+      margin-bottom: 8px;
+      font-size: 16px;
+      font-weight: 500;
+    }
 
-        .section-title {
-            font-size: 20px;
-            font-weight: bold;
-            color: #1e40af;
-            border-left: 4px solid #2563eb;
-            padding-left: 10px;
-            margin-bottom: 15px;
-        }
+    .space-y-6 > * + * {
+      margin-top: 1.5rem;
+    }
 
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-            margin-bottom: 20px;
-        }
+    .space-y-8 > * + * {
+      margin-top: 2rem;
+    }
 
-        .info-item {
-            display: flex;
-            padding: 10px;
-            background: #f9fafb;
-            border-radius: 4px;
-        }
+    .grid {
+      display: grid;
+      gap: 1rem;
+    }
 
-        .info-label {
-            font-weight: bold;
-            color: #4b5563;
-            min-width: 120px;
-        }
+    .grid-cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 
-        .info-value {
-            color: #1f2937;
-        }
+    .grid-cols-4 {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
 
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin-bottom: 20px;
-        }
+    @media (min-width: 768px) {
+      .md\\:grid-cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
 
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }
+    .card {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid #e2e8f0;
+    }
 
-        .stat-card.blue {
-            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
-        }
+    .card-header {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
 
-        .stat-card.green {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        }
+    .text-muted {
+      color: #64748b;
+      font-size: 12px;
+    }
 
-        .stat-card.orange {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        }
+    .font-medium {
+      font-weight: 500;
+    }
 
-        .stat-card.red {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        }
+    .font-semibold {
+      font-weight: 600;
+    }
 
-        .stat-label {
-            font-size: 14px;
-            opacity: 0.9;
-            margin-bottom: 8px;
-        }
+    .text-center {
+      text-align: center;
+    }
 
-        .stat-value {
-            font-size: 32px;
-            font-weight: bold;
-        }
+    .text-sm {
+      font-size: 14px;
+    }
 
-        .stat-unit {
-            font-size: 14px;
-            opacity: 0.9;
-            margin-left: 5px;
-        }
+    .text-base {
+      font-size: 16px;
+    }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
+    .text-lg {
+      font-size: 18px;
+    }
 
-        table th,
-        table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #e5e7eb;
-        }
+    .text-2xl {
+      font-size: 24px;
+    }
 
-        table th {
-            background: #f3f4f6;
-            font-weight: bold;
-            color: #374151;
-        }
+    .mb-1 {
+      margin-bottom: 0.25rem;
+    }
 
-        table tbody tr:hover {
-            background: #f9fafb;
-        }
+    .mb-2 {
+      margin-bottom: 0.5rem;
+    }
 
-        .event-group {
-            margin-bottom: 25px;
-        }
+    .mb-3 {
+      margin-bottom: 0.75rem;
+    }
 
-        .event-type-header {
-            background: #dbeafe;
-            color: #1e40af;
-            padding: 10px 15px;
-            font-weight: bold;
-            border-radius: 4px;
-            margin-bottom: 10px;
-        }
+    .mb-4 {
+      margin-bottom: 1rem;
+    }
 
-        .event-list {
-            padding-left: 20px;
-        }
+    .mr-4 {
+      margin-right: 1rem;
+    }
 
-        .event-item {
-            padding: 8px 0;
-            border-bottom: 1px solid #f3f4f6;
-        }
+    .flex {
+      display: flex;
+    }
 
-        .event-item:last-child {
-            border-bottom: none;
-        }
+    .justify-between {
+      justify-content: space-between;
+    }
 
-        .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid #e5e7eb;
-            text-align: center;
-            color: #6b7280;
-            font-size: 14px;
-        }
+    .items-center {
+      align-items: center;
+    }
 
-        .no-data {
-            text-align: center;
-            color: #9ca3af;
-            padding: 20px;
-            font-style: italic;
-        }
+    .overflow-x-auto {
+      overflow-x: auto;
+    }
 
-        @media print {
-            body {
-                background: white;
-                padding: 0;
-            }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
 
-            .container {
-                box-shadow: none;
-                padding: 20px;
-            }
-        }
-    </style>
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    thead {
+      background: #f8fafc;
+    }
+
+    th {
+      font-weight: 600;
+      color: #64748b;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    td {
+      font-size: 14px;
+    }
+
+    .text-red-600 {
+      color: #dc2626;
+    }
+
+    .text-green-600 {
+      color: #16a34a;
+    }
+
+    .text-yellow-600 {
+      color: #ca8a04;
+    }
+
+    .text-orange-600 {
+      color: #ea580c;
+    }
+
+    .metrics-chart-container {
+      width: 100%;
+      margin: 1rem 0;
+    }
+
+    .metrics-chart-container img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    @media print {
+      body {
+        background: white;
+        padding: 0;
+      }
+      .container {
+        box-shadow: none;
+        padding: 20px;
+      }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <!-- 报告头部 -->
-        <div class="header">
-            <h1>VAR熔池分析报告</h1>
-            <div class="subtitle">生成时间: ${new Date().toLocaleString('zh-CN')}</div>
+  <div class="container">
+    <div class="space-y-6">
+      <!-- 报告标题 -->
+      <div class="card">
+        <div class="text-center">
+          <h1 class="text-2xl font-bold mb-2">熔池分析报告</h1>
+          <p class="text-muted">${data.task.name}</p>
         </div>
-
-        <!-- 基本信息 -->
-        <div class="section">
-            <div class="section-title">任务基本信息</div>
-            <div class="info-grid">
-                <div class="info-item">
-                    <div class="info-label">任务名称:</div>
-                    <div class="info-value">${task.name}</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">任务ID:</div>
-                    <div class="info-value">${task.taskId}</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">创建时间:</div>
-                    <div class="info-value">${formatDateTime(task.createdAt)}</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">开始时间:</div>
-                    <div class="info-value">${formatDateTime(task.startedAt)}</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">结束时间:</div>
-                    <div class="info-value">${formatDateTime(task.completedAt)}</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">任务耗时:</div>
-                    <div class="info-value">${formatDuration(calculateDuration(task.startedAt, task.completedAt))}</div>
-                </div>
-            </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm" style="margin-top: 1.5rem;">
+          <div>
+            <p class="text-muted mb-1">任务名称</p>
+            <p class="font-medium">${data.task.name}</p>
+          </div>
+          <div>
+            <p class="text-muted mb-1">视频时长</p>
+            <p class="font-medium">${data.task.videoDuration.toFixed(1)}秒</p>
+          </div>
+          <div>
+            <p class="text-muted mb-1">视频帧率</p>
+            <p class="font-medium">${data.fps} FPS</p>
+          </div>
+          <div>
+            <p class="text-muted mb-1">任务创建时间</p>
+            <p class="font-medium">${new Date(data.task.createdAt).toLocaleString('zh-CN')}</p>
+          </div>
+          <div>
+            <p class="text-muted mb-1">任务开始时间</p>
+            <p class="font-medium">${data.task.startedAt ? new Date(data.task.startedAt).toLocaleString('zh-CN') : '-'}</p>
+          </div>
+          <div>
+            <p class="text-muted mb-1">任务结束时间</p>
+            <p class="font-medium">${data.task.completedAt ? new Date(data.task.completedAt).toLocaleString('zh-CN') : '-'}</p>
+          </div>
+          <div>
+            <p class="text-muted mb-1">任务耗时</p>
+            <p class="font-medium">${formatDuration(taskDuration)}</p>
+          </div>
         </div>
+      </div>
 
-        <!-- 视频信息 -->
-        <div class="section">
-            <div class="section-title">视频信息</div>
-            <div class="info-grid">
-                <div class="info-item">
-                    <div class="info-label">视频时长:</div>
-                    <div class="info-value">${task.videoDuration.toFixed(2)} 秒</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">视频帧率:</div>
-                    <div class="info-value">${fps.toFixed(2)} FPS</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">总帧数:</div>
-                    <div class="info-value">${result.dynamicMetrics.length} 帧</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">任务状态:</div>
-                    <div class="info-value">${result.isTimeout ? '超时完成' : '正常完成'}</div>
-                </div>
-            </div>
+      <!-- 动态参数统计 -->
+      <div class="card">
+        <h3 class="card-header">动态参数统计</h3>
+        <div class="space-y-8">
+          <!-- 熔池亮度 -->
+          ${chartImages[0]
+            ? generateChartHTML(
+                chartImages[0],
+                '<span class="text-yellow-600">熔池亮度</span>',
+                avgBrightness.toFixed(1),
+                brightnessTrend,
+                '灰度值'
+              )
+            : ''}
+
+          <!-- 熔池面积 -->
+          ${chartImages[1]
+            ? generateChartHTML(
+                chartImages[1],
+                '<span class="text-green-600">熔池面积</span>',
+                avgArea.toFixed(0),
+                areaTrend,
+                '像素'
+              )
+            : ''}
+
+          <!-- 熔池周长 -->
+          ${chartImages[2]
+            ? generateChartHTML(
+                chartImages[2],
+                '<span class="text-orange-600">熔池周长</span>',
+                avgPerimeter.toFixed(1),
+                perimeterTrend,
+                '像素'
+              )
+            : ''}
         </div>
+      </div>
 
-        <!-- 动态参数统计 -->
-        <div class="section">
-            <div class="section-title">动态参数统计</div>
-            <div class="stats-grid">
-                <div class="stat-card blue">
-                    <div class="stat-label">平均亮度</div>
-                    <div class="stat-value">${avgBrightness.toFixed(1)}</div>
-                </div>
-                <div class="stat-card green">
-                    <div class="stat-label">平均面积</div>
-                    <div class="stat-value">${avgArea.toFixed(0)}<span class="stat-unit">像素</span></div>
-                </div>
-                <div class="stat-card orange">
-                    <div class="stat-label">平均周长</div>
-                    <div class="stat-value">${avgPerimeter.toFixed(1)}<span class="stat-unit">像素</span></div>
-                </div>
-                <div class="stat-card red">
-                    <div class="stat-label">平均圆度</div>
-                    <div class="stat-value">${avgCircularity.toFixed(3)}</div>
-                </div>
-            </div>
-
-            <p style="color: #6b7280; font-size: 14px; margin-top: 10px;">
-                注: 圆度 = 4π × 面积 / 周长²，范围为 0-1，值越接近 1 表示形状越接近圆形
-            </p>
+      ${groupedEvents.length > 0
+        ? `
+      <!-- 异常事件统计 -->
+      <div class="card">
+        <h3 class="card-header">异常事件统计</h3>
+        <div class="overflow-x-auto">
+          <table>
+            <thead>
+              <tr>
+                <th>事件类型</th>
+                <th>开始时间</th>
+                <th>结束时间</th>
+                <th>持续时间</th>
+                <th>详细信息</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${groupedEvents.map(event => `
+                <tr>
+                  <td class="font-medium">${event.eventType}</td>
+                  <td class="text-muted">${event.startTime}</td>
+                  <td class="text-muted">${event.endTime}</td>
+                  <td class="text-muted">${event.duration}</td>
+                  <td class="text-muted">
+                    ${event.eventType === '电极粘连物脱落' && event.metadata
+                        ? (event.metadata.droppedIntoPool
+                            ? '<span class="text-red-600">⚠️ 掉落进熔池</span>'
+                            : '<span class="text-green-600">✓ 被结晶器捕获</span>')
+                        : (event.metadata ? JSON.stringify(event.metadata) : '-')
+                    }
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
         </div>
+      </div>
+      `
+        : ''}
 
-        <!-- 异常事件统计 -->
-        <div class="section">
-            <div class="section-title">异常事件统计</div>
-            ${result.anomalyEvents.length > 0
-              ? `
-                ${Array.from(eventsByType.entries()).map(([typeName, events]) => `
-                    <div class="event-group">
-                        <div class="event-type-header">
-                            ${typeName} (${events.length} 次)
-                        </div>
-                        <div class="event-list">
-                            ${events.map((event, index) => `
-                                <div class="event-item">
-                                    ${index + 1}. ${getEventDescription(event, fps)}
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `).join('')}
-            `
-              : '<div class="no-data">未检测到异常事件</div>'}
+      <!-- 报告生成时间 -->
+      <div class="card">
+        <div class="text-center text-sm text-muted">
+          <p>报告生成时间: ${new Date().toLocaleString('zh-CN')}</p>
         </div>
-
-        <!-- 追踪物体统计 -->
-        <div class="section">
-            <div class="section-title">追踪物体统计</div>
-            ${result.trackingObjects.length > 0
-              ? `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>物体ID</th>
-                            <th>类别</th>
-                            <th>首次出现</th>
-                            <th>最后出现</th>
-                            <th>持续时长</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${result.trackingObjects.map(obj => `
-                            <tr>
-                                <td>${obj.objectId}</td>
-                                <td>${obj.category}</td>
-                                <td>第 ${obj.firstFrame} 帧 (${formatTimestamp(obj.firstFrame / fps)})</td>
-                                <td>第 ${obj.lastFrame} 帧 (${formatTimestamp(obj.lastFrame / fps)})</td>
-                                <td>${((obj.lastFrame - obj.firstFrame) / fps).toFixed(2)} 秒</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `
-              : '<div class="no-data">未检测到追踪物体</div>'}
-        </div>
-
-        <!-- 报告尾部 -->
-        <div class="footer">
-            <p>VAR熔池智能分析系统 - 自动生成报告</p>
-            <p>报告ID: ${task.taskId} | 生成时间: ${new Date().toISOString()}</p>
-        </div>
+      </div>
     </div>
+  </div>
 </body>
 </html>
-    `
+      `
 
-    return html
+      // 创建下载链接
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `熔池分析报告_${data.task.name}_${new Date().getTime()}.html`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('生成 HTML 失败:', error)
+      throw new Error('生成 HTML 时发生错误')
+    }
   }
 
   /**
-   * 导出 HTML 报告
-   */
-  const exportToHTML = (data: ReportData) => {
-    const html = generateHTMLReport(data)
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `VAR分析报告_${data.task.name}_${Date.now()}.html`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
-
-  /**
-   * 导出 PDF 报告
+   * 导出为 PDF
+   * 使用jsPDF将HTML内容转换为PDF
    */
   const exportToPDF = async (data: ReportData) => {
-    // 创建临时容器
-    const container = document.createElement('div')
-    container.style.position = 'absolute'
-    container.style.left = '-9999px'
-    container.style.top = '0'
-    container.style.width = '1200px'
-    container.innerHTML = generateHTMLReport(data)
-    document.body.appendChild(container)
-
     try {
-      // 将 HTML 转换为 Canvas
-      const canvas = await html2canvas(container, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      })
+      // 等待图表渲染完成
+      await waitForChartsReady()
+
+      // 获取所有图表的base64图片
+      const chartImages = await getChartImages()
+
+      if (chartImages.length === 0) {
+        throw new Error('无法获取图表图片，请确保图表已正确渲染')
+      }
+
+      // 计算各项平均值和趋势
+      const brightnessValues = data.result.dynamicMetrics.map(m => m.brightness || 0)
+      const areaValues = data.result.dynamicMetrics.map(m => m.poolArea || 0)
+      const perimeterValues = data.result.dynamicMetrics.map(m => m.poolPerimeter || 0)
+
+      const avgBrightness = calculateAverage(brightnessValues)
+      const avgArea = calculateAverage(areaValues)
+      const avgPerimeter = calculateAverage(perimeterValues)
+
+      const brightnessTrend = calculateTrend(brightnessValues)
+      const areaTrend = calculateTrend(areaValues)
+      const perimeterTrend = calculateTrend(perimeterValues)
 
       // 创建 PDF
-      const imgWidth = 210 // A4 宽度 (mm)
-      const pageHeight = 297 // A4 高度 (mm)
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      let heightLeft = imgHeight
-      let position = 0
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
 
-      const pdf = new jsPDF('p', 'mm', 'a4')
-      const imgData = canvas.toDataURL('image/png')
+      const pageWidth = 210
+      const margin = 15
+      const contentWidth = pageWidth - 2 * margin
+      let yPosition = margin
 
-      // 添加第一页
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
+      // 添加标题
+      pdf.setFontSize(20)
+      pdf.text('熔池分析报告', pageWidth / 2, yPosition, { align: 'center' })
+      yPosition += 10
 
-      // 如果内容超过一页，添加额外的页面
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight
-        pdf.addPage()
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
+      pdf.setFontSize(12)
+      pdf.text(data.task.name, pageWidth / 2, yPosition, { align: 'center' })
+      yPosition += 15
+
+      // 添加基本信息
+      pdf.setFontSize(10)
+      const info = [
+        `任务名称: ${data.task.name}`,
+        `视频时长: ${data.task.videoDuration.toFixed(1)}秒`,
+        `视频帧率: ${data.fps} FPS`,
+        `任务创建时间: ${new Date(data.task.createdAt).toLocaleString('zh-CN')}`
+      ]
+
+      info.forEach((line) => {
+        pdf.text(line, margin, yPosition)
+        yPosition += 7
+      })
+
+      yPosition += 10
+
+      // 添加图表
+      const charts = [
+        { title: '熔池亮度', avg: avgBrightness.toFixed(1), trend: brightnessTrend, unit: '灰度值', image: chartImages[0] },
+        { title: '熔池面积', avg: avgArea.toFixed(0), trend: areaTrend, unit: '像素', image: chartImages[1] },
+        { title: '熔池周长', avg: avgPerimeter.toFixed(1), trend: perimeterTrend, unit: '像素', image: chartImages[2] }
+      ]
+
+      for (const chart of charts) {
+        if (chart.image) {
+          // 检查是否需要新页面
+          if (yPosition > 240) {
+            pdf.addPage()
+            yPosition = margin
+          }
+
+          pdf.setFontSize(12)
+          pdf.text(chart.title, margin, yPosition)
+          yPosition += 7
+
+          pdf.setFontSize(9)
+          pdf.text(`${chart.avg} ${chart.unit}  变化趋势: ${chart.trend}`, margin, yPosition)
+          yPosition += 5
+
+          // 添加图表图片
+          const imgWidth = contentWidth
+          const imgHeight = imgWidth * 0.4 // 保持合适的高宽比
+
+          pdf.addImage(chart.image, 'PNG', margin, yPosition, imgWidth, imgHeight)
+          yPosition += imgHeight + 10
+        }
       }
 
       // 保存 PDF
-      pdf.save(`VAR分析报告_${data.task.name}_${Date.now()}.pdf`)
-    } finally {
-      // 清理临时容器
-      document.body.removeChild(container)
+      pdf.save(`熔池分析报告_${data.task.name}_${new Date().getTime()}.pdf`)
+    } catch (error) {
+      console.error('生成 PDF 失败:', error)
+      throw new Error('生成 PDF 时发生错误')
     }
   }
 
   return {
-    calculateCircularity,
-    calculateCircularityMetrics,
     calculateAverage,
-    formatTimestamp,
-    formatDateTime,
-    formatDuration,
-    getEventDescription,
-    getEventTypeName,
-    generateHTMLReport,
     exportToHTML,
     exportToPDF
   }
