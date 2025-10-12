@@ -200,6 +200,16 @@
             :class="getObjectClass(obj.category)"
             :title="getObjectTooltip(obj)"
           />
+
+          <!-- 当前时间标线 -->
+          <div
+            class="playhead"
+            :style="{ left: progressPercentage + '%' }"
+          >
+            <div class="playhead-triangle-bottom" />
+            <div class="playhead-line" />
+            <div class="playhead-triangle-top" />
+          </div>
         </div>
 
         <template #footer>
@@ -863,6 +873,59 @@ const jumpToFrame = () => {
   background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
   opacity: 0.3;
   transition: width 0.1s;
+}
+
+/* 当前时间标线 */
+.playhead {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.playhead-line {
+  width: 3px;
+  flex: 1;
+  background: rgb(0, 0, 0);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+:global(html.dark) .playhead-line {
+  background: rgb(255, 255, 255);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+}
+
+.playhead-triangle-top,
+.playhead-triangle-bottom {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+}
+
+.playhead-triangle-top {
+  border-bottom: 8px solid rgb(0, 0, 0);
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
+}
+
+:global(html.dark) .playhead-triangle-top {
+  border-bottom-color: rgb(255, 255, 255);
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.6));
+}
+
+.playhead-triangle-bottom {
+  border-top: 8px solid rgb(0, 0, 0);
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
+}
+
+:global(html.dark) .playhead-triangle-bottom {
+  border-top-color: rgb(255, 255, 255);
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.6));
 }
 
 .event-marker {

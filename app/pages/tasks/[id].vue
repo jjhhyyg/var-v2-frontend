@@ -64,6 +64,14 @@ const trajectoryPlaying = ref(false)
 const trajectoryCanvas = ref<HTMLCanvasElement | null>(null)
 let trajectoryAnimationFrame: number | null = null
 
+// 缩放和平移相关
+const trajectoryScale = ref(10)
+const trajectoryOffsetX = ref(0)
+const trajectoryOffsetY = ref(0)
+const isDragging = ref(false)
+const dragStartX = ref(0)
+const dragStartY = ref(0)
+
 const currentTrajectoryFrame = computed(() => {
   if (!selectedObject.value?.trajectory?.[trajectoryCurrentIndex.value]) {
     return 0
@@ -78,6 +86,22 @@ const currentTrajectoryPoint = computed(() => {
   }
   return selectedObject.value.trajectory[trajectoryCurrentIndex.value]
 })
+
+// 计算轨迹边界框
+const getTrajectoryBounds = (trajectory: any[]) => {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+
+  for (const point of trajectory) {
+    if (!point || !point.bbox) continue
+    const [x1, y1, x2, y2] = point.bbox
+    minX = Math.min(minX, x1, x2)
+    minY = Math.min(minY, y1, y2)
+    maxX = Math.max(maxX, x1, x2)
+    maxY = Math.max(maxY, y1, y2)
+  }
+
+  return { minX, minY, maxX, maxY }
+}
 
 // 显示轨迹
 const showTrajectory = (obj: TrackingObject) => {
@@ -103,6 +127,12 @@ const showTrajectory = (obj: TrackingObject) => {
   selectedObject.value = obj
   trajectoryCurrentIndex.value = 0
   trajectoryPlaying.value = false
+
+  // 重置缩放和平移
+  trajectoryScale.value = 10
+  trajectoryOffsetX.value = 0
+  trajectoryOffsetY.value = 0
+
   trajectoryModalOpen.value = true
 
   // 等待 canvas 渲染后绘制
@@ -119,14 +149,45 @@ const updateTrajectoryCanvas = () => {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  // 清空画布
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
-
   const trajectory = selectedObject.value.trajectory
   const currentIndex = trajectoryCurrentIndex.value
 
   // 确保索引有效
   if (currentIndex >= trajectory.length) return
+
+  // 计算轨迹边界
+  const bounds = getTrajectoryBounds(trajectory)
+  const padding = 100 // 边距
+  const dataWidth = bounds.maxX - bounds.minX + padding * 2
+  const dataHeight = bounds.maxY - bounds.minY + padding * 2
+
+  // Canvas 实际尺寸
+  const canvasWidth = canvas.width
+  const canvasHeight = canvas.height
+
+  // 清空画布
+  ctx.fillStyle = '#1a1a1a'
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+
+  // 保存上下文
+  ctx.save()
+
+  // 应用缩放和平移
+  const scale = trajectoryScale.value
+  const offsetX = trajectoryOffsetX.value
+  const offsetY = trajectoryOffsetY.value
+
+  // 计算居中偏移
+  const centerOffsetX = (canvasWidth - dataWidth) / 2 - bounds.minX + padding
+  const centerOffsetY = (canvasHeight - dataHeight) / 2 - bounds.minY + padding
+
+  ctx.translate(canvasWidth / 2, canvasHeight / 2)
+  ctx.scale(scale, scale)
+  ctx.translate(-canvasWidth / 2 + offsetX, -canvasHeight / 2 + offsetY)
+  ctx.translate(centerOffsetX, centerOffsetY)
+
+  // 绘制网格和坐标轴
+  drawGrid(ctx, bounds, scale)
 
   // 1. 绘制所有轨迹线（已过实线 + 未过虚线）
   for (let i = 0; i < trajectory.length - 1; i++) {
@@ -148,13 +209,13 @@ const updateTrajectoryCanvas = () => {
     if (i < currentIndex) {
       // 已经过的线：实线，蓝色
       ctx.strokeStyle = 'rgba(100, 200, 255, 0.8)'
-      ctx.lineWidth = 2
-      ctx.setLineDash([]) // 实线
+      ctx.lineWidth = 2 / scale
+      ctx.setLineDash([])
     } else {
       // 未经过的线：虚线，淡蓝色
       ctx.strokeStyle = 'rgba(100, 200, 255, 0.3)'
-      ctx.lineWidth = 2
-      ctx.setLineDash([8, 4]) // 虚线
+      ctx.lineWidth = 2 / scale
+      ctx.setLineDash([8 / scale, 4 / scale])
     }
     ctx.stroke()
   }
@@ -173,7 +234,7 @@ const updateTrajectoryCanvas = () => {
 
     // 绘制圆点
     ctx.beginPath()
-    ctx.arc(centerX, centerY, 6, 0, Math.PI * 2)
+    ctx.arc(centerX, centerY, 6 / scale, 0, Math.PI * 2)
 
     if (i <= currentIndex) {
       // 已经过的点和当前点：实心点
@@ -185,28 +246,102 @@ const updateTrajectoryCanvas = () => {
     } else {
       // 未经过的点：空心点
       ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)'
-      ctx.lineWidth = 2
+      ctx.lineWidth = 2 / scale
       ctx.stroke()
     }
   }
 
   // 3. 绘制当前边界框（高亮）
   const currentPoint = trajectory[currentIndex]
-  if (!currentPoint) return
+  if (currentPoint) {
+    const [x1, y1, x2, y2] = currentPoint.bbox
 
-  const [x1, y1, x2, y2] = currentPoint.bbox
+    ctx.strokeStyle = 'rgba(255, 100, 100, 1)'
+    ctx.lineWidth = 3 / scale
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
 
-  ctx.strokeStyle = 'rgba(255, 100, 100, 1)'
-  ctx.lineWidth = 3
-  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
+    // 4. 绘制当前帧号和置信度标签
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+    const labelWidth = 280 / scale
+    const labelHeight = 25 / scale
+    ctx.fillRect(x1, y1 - 30 / scale, labelWidth, labelHeight)
 
-  // 4. 绘制当前帧号和置信度标签
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
-  ctx.fillRect(x1, y1 - 30, 280, 25)
+    ctx.fillStyle = 'rgba(255, 255, 255, 1)'
+    ctx.font = `${14 / scale}px monospace`
+    ctx.fillText(`Frame: ${currentPoint.frame} | Conf: ${currentPoint.confidence.toFixed(4)}`, x1 + 5 / scale, y1 - 10 / scale)
+  }
 
-  ctx.fillStyle = 'rgba(255, 255, 255, 1)'
-  ctx.font = '14px monospace'
-  ctx.fillText(`Frame: ${currentPoint.frame} | Conf: ${currentPoint.confidence.toFixed(4)}`, x1 + 5, y1 - 10)
+  // 恢复上下文
+  ctx.restore()
+}
+
+// 绘制网格和坐标轴
+const drawGrid = (ctx: CanvasRenderingContext2D, bounds: any, scale: number) => {
+  const { minX, minY, maxX, maxY } = bounds
+
+  // 根据缩放级别调整网格间距
+  let gridSpacing = 100 // 基础网格间距（像素）
+  if (scale > 2) gridSpacing = 50
+  if (scale > 4) gridSpacing = 20
+  if (scale < 0.5) gridSpacing = 200
+
+  // 绘制网格线
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+  ctx.lineWidth = 1 / scale
+
+  // 垂直网格线
+  for (let x = Math.floor(minX / gridSpacing) * gridSpacing; x <= maxX; x += gridSpacing) {
+    ctx.beginPath()
+    ctx.moveTo(x, minY - 50)
+    ctx.lineTo(x, maxY + 50)
+    ctx.stroke()
+  }
+
+  // 水平网格线
+  for (let y = Math.floor(minY / gridSpacing) * gridSpacing; y <= maxY; y += gridSpacing) {
+    ctx.beginPath()
+    ctx.moveTo(minX - 50, y)
+    ctx.lineTo(maxX + 50, y)
+    ctx.stroke()
+  }
+
+  // 绘制坐标轴
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+  ctx.lineWidth = 2 / scale
+
+  // X 轴
+  ctx.beginPath()
+  ctx.moveTo(minX - 50, minY - 50)
+  ctx.lineTo(maxX + 50, minY - 50)
+  ctx.stroke()
+
+  // Y 轴
+  ctx.beginPath()
+  ctx.moveTo(minX - 50, minY - 50)
+  ctx.lineTo(minX - 50, maxY + 50)
+  ctx.stroke()
+
+  // 绘制刻度标签
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
+  ctx.font = `${12 / scale}px monospace`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+
+  // X 轴刻度
+  for (let x = Math.floor(minX / gridSpacing) * gridSpacing; x <= maxX; x += gridSpacing) {
+    ctx.fillText(`${x}px`, x, minY - 45 / scale)
+  }
+
+  // Y 轴刻度
+  ctx.textAlign = 'right'
+  ctx.textBaseline = 'middle'
+  for (let y = Math.floor(minY / gridSpacing) * gridSpacing; y <= maxY; y += gridSpacing) {
+    ctx.fillText(`${y}px`, minX - 55 / scale, y)
+  }
+
+  // 重置文本对齐
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
 }
 
 // 播放/暂停轨迹动画
@@ -251,6 +386,56 @@ const resetTrajectory = () => {
     trajectoryAnimationFrame = null
   }
   updateTrajectoryCanvas()
+}
+
+// 缩放控制
+const zoomIn = () => {
+  trajectoryScale.value = Math.min(trajectoryScale.value * 1.2, 10)
+  updateTrajectoryCanvas()
+}
+
+const zoomOut = () => {
+  trajectoryScale.value = Math.max(trajectoryScale.value / 1.2, 0.1)
+  updateTrajectoryCanvas()
+}
+
+const resetZoom = () => {
+  trajectoryScale.value = 10
+  trajectoryOffsetX.value = 0
+  trajectoryOffsetY.value = 0
+  updateTrajectoryCanvas()
+}
+
+// 鼠标滚轮缩放
+const handleWheel = (e: WheelEvent) => {
+  e.preventDefault()
+  if (e.deltaY < 0) {
+    zoomIn()
+  } else {
+    zoomOut()
+  }
+}
+
+// 鼠标拖拽平移
+const handleMouseDown = (e: MouseEvent) => {
+  isDragging.value = true
+  dragStartX.value = e.clientX - trajectoryOffsetX.value
+  dragStartY.value = e.clientY - trajectoryOffsetY.value
+}
+
+const handleMouseMove = (e: MouseEvent) => {
+  if (!isDragging.value) return
+  trajectoryOffsetX.value = e.clientX - dragStartX.value
+  trajectoryOffsetY.value = e.clientY - dragStartY.value
+  updateTrajectoryCanvas()
+}
+
+const handleMouseUp = () => {
+  isDragging.value = false
+}
+
+const handleMouseLeave = () => {
+  isDragging.value = false
 }
 
 // 监听索引变化，更新画布
@@ -1057,9 +1242,30 @@ const statsCards = computed(() => {
               </div>
             </div>
 
+            <!-- 缩放控制 -->
+            <div class="flex items-center gap-2 pb-2 border-b">
+              <UButton icon="i-lucide-zoom-in" size="sm" variant="soft" title="放大" @click="zoomIn"> 放大 </UButton>
+              <UButton icon="i-lucide-zoom-out" size="sm" variant="soft" title="缩小" @click="zoomOut"> 缩小 </UButton>
+              <UButton icon="i-lucide-maximize" size="sm" variant="soft" title="重置视图" @click="resetZoom"> 重置视图 </UButton>
+              <span class="text-sm text-muted ml-auto">
+                缩放: {{ trajectoryScale.toFixed(2) }}x | 提示: 使用滚轮缩放，拖拽移动视图
+              </span>
+            </div>
+
             <!-- 轨迹可视化画布 -->
-            <div class="relative bg-black rounded-lg overflow-hidden">
-              <canvas ref="trajectoryCanvas" class="w-full" :width="1920" :height="1080" />
+            <div class="relative bg-black rounded-lg overflow-hidden" style="cursor: grab;">
+              <canvas
+                ref="trajectoryCanvas"
+                class="w-full"
+                :width="1920"
+                :height="1080"
+                :style="{ cursor: isDragging ? 'grabbing' : 'grab' }"
+                @wheel="handleWheel"
+                @mousedown="handleMouseDown"
+                @mousemove="handleMouseMove"
+                @mouseup="handleMouseUp"
+                @mouseleave="handleMouseLeave"
+              />
             </div>
 
             <!-- 播放控制 -->
