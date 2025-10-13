@@ -688,13 +688,24 @@ export function useReportGenerator() {
       pdf.text(data.task.name, pageWidth / 2, yPosition, { align: 'center' })
       yPosition += 15
 
+      // 计算任务耗时
+      let taskDuration = 0
+      if (data.task.startedAt && data.task.completedAt) {
+        const start = new Date(data.task.startedAt).getTime()
+        const end = new Date(data.task.completedAt).getTime()
+        taskDuration = (end - start) / 1000
+      }
+
       // 添加基本信息
       pdf.setFontSize(10)
       const info = [
         `任务名称: ${data.task.name}`,
         `视频时长: ${data.task.videoDuration.toFixed(1)}秒`,
         `视频帧率: ${data.fps} FPS`,
-        `任务创建时间: ${new Date(data.task.createdAt).toLocaleString('zh-CN')}`
+        `任务创建时间: ${new Date(data.task.createdAt).toLocaleString('zh-CN')}`,
+        `任务开始时间: ${data.task.startedAt ? new Date(data.task.startedAt).toLocaleString('zh-CN') : '-'}`,
+        `任务结束时间: ${data.task.completedAt ? new Date(data.task.completedAt).toLocaleString('zh-CN') : '-'}`,
+        `任务耗时: ${formatDuration(taskDuration)}`
       ]
 
       info.forEach((line) => {
@@ -733,6 +744,110 @@ export function useReportGenerator() {
 
           pdf.addImage(chart.image, 'PNG', margin, yPosition, imgWidth, imgHeight)
           yPosition += imgHeight + 10
+        }
+      }
+
+      // 添加异常事件统计（与ReportPreview.vue保持一致）
+      const groupedEvents = data.result.anomalyEvents.map((event) => {
+        const startTime = formatFrameToTime(event.startFrame, data.fps)
+        const endTime = formatFrameToTime(event.endFrame, data.fps)
+        const durationFrames = event.endFrame - event.startFrame
+        const durationSeconds = durationFrames / data.fps
+        const duration = durationSeconds.toFixed(1) + '秒'
+
+        // 格式化详细信息
+        let details = '-'
+        if (event.eventType === 'ADHESION_DROPPED' && event.metadata) {
+          details = event.metadata.droppedIntoPool ? '⚠️ 掉落进熔池' : '✓ 被结晶器捕获'
+        } else if (event.metadata) {
+          details = JSON.stringify(event.metadata)
+        }
+
+        return {
+          eventType: eventTypeMap[event.eventType] || event.eventType,
+          startTime,
+          endTime,
+          duration,
+          details
+        }
+      })
+
+      if (groupedEvents.length > 0) {
+        // 检查是否需要新页面
+        if (yPosition > 200) {
+          pdf.addPage()
+          yPosition = margin
+        }
+
+        // 添加标题
+        pdf.setFontSize(14)
+        pdf.text('异常事件统计', margin, yPosition)
+        yPosition += 10
+
+        // 添加表头
+        pdf.setFontSize(9)
+        const colWidths = [35, 25, 25, 25, 70] // 列宽度
+        const headers = ['事件类型', '开始时间', '结束时间', '持续时间', '详细信息']
+        let xPosition = margin
+
+        headers.forEach((header, index) => {
+          pdf.text(header, xPosition, yPosition)
+          xPosition += colWidths[index]
+        })
+
+        yPosition += 6
+
+        // 添加分隔线
+        pdf.setLineWidth(0.5)
+        pdf.line(margin, yPosition, pageWidth - margin, yPosition)
+        yPosition += 5
+
+        // 添加事件数据
+        pdf.setFontSize(8)
+        for (const event of groupedEvents) {
+          // 检查是否需要新页面
+          if (yPosition > 270) {
+            pdf.addPage()
+            yPosition = margin
+
+            // 重新添加表头
+            pdf.setFontSize(9)
+            xPosition = margin
+            headers.forEach((header, index) => {
+              pdf.text(header, xPosition, yPosition)
+              xPosition += colWidths[index]
+            })
+            yPosition += 6
+            pdf.setLineWidth(0.5)
+            pdf.line(margin, yPosition, pageWidth - margin, yPosition)
+            yPosition += 5
+            pdf.setFontSize(8)
+          }
+
+          xPosition = margin
+
+          // 事件类型
+          pdf.text(event.eventType, xPosition, yPosition)
+          xPosition += colWidths[0]
+
+          // 开始时间
+          pdf.text(event.startTime, xPosition, yPosition)
+          xPosition += colWidths[1]
+
+          // 结束时间
+          pdf.text(event.endTime, xPosition, yPosition)
+          xPosition += colWidths[2]
+
+          // 持续时间
+          pdf.text(event.duration, xPosition, yPosition)
+          xPosition += colWidths[3]
+
+          // 详细信息（处理长文本）
+          const maxWidth = colWidths[4] - 5
+          const detailsLines = pdf.splitTextToSize(event.details, maxWidth)
+          pdf.text(detailsLines, xPosition, yPosition)
+
+          yPosition += Math.max(6, detailsLines.length * 4)
         }
       }
 
