@@ -132,7 +132,6 @@ const handleExportPDF = async () => {
     exportingPDF.value = false
   }
 }
-
 </script>
 
 <template>
