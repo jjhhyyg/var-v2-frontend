@@ -6,6 +6,7 @@
 import jsPDF from 'jspdf'
 import * as echarts from 'echarts/core'
 import type { Task, TaskResult } from './useTaskApi'
+import { loadChineseFontFromFile, CHINESE_FONT_CONFIG } from '~/utils/chineseFont'
 
 export interface ReportData {
   task: Task
@@ -604,6 +605,32 @@ export function useReportGenerator() {
   }
 
   /**
+   * 加载中文字体到 jsPDF
+   */
+  const loadChineseFont = async (pdf: jsPDF): Promise<boolean> => {
+    try {
+      // 尝试从 public 目录加载字体文件
+      const fontBase64 = await loadChineseFontFromFile(CHINESE_FONT_CONFIG.fontPath)
+
+      // 添加字体到 VFS
+      pdf.addFileToVFS(CHINESE_FONT_CONFIG.fontFileName, fontBase64)
+
+      // 注册字体
+      pdf.addFont(
+        CHINESE_FONT_CONFIG.fontFileName,
+        CHINESE_FONT_CONFIG.fontName,
+        CHINESE_FONT_CONFIG.fontStyle
+      )
+
+      console.log('中文字体加载成功')
+      return true
+    } catch (error) {
+      console.warn('中文字体加载失败，将使用默认字体（可能无法显示中文）:', error)
+      return false
+    }
+  }
+
+  /**
    * 导出为 PDF
    * 使用jsPDF将HTML内容转换为PDF
    */
@@ -638,6 +665,14 @@ export function useReportGenerator() {
         unit: 'mm',
         format: 'a4'
       })
+
+      // 加载中文字体
+      const fontLoaded = await loadChineseFont(pdf)
+
+      // 设置字体（如果加载成功则使用中文字体，否则使用默认字体）
+      if (fontLoaded) {
+        pdf.setFont(CHINESE_FONT_CONFIG.fontName, CHINESE_FONT_CONFIG.fontStyle)
+      }
 
       const pageWidth = 210
       const margin = 15

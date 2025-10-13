@@ -22,6 +22,7 @@ export interface TaskConfig {
 export interface Task {
   taskId: string // 后端 Long 类型，前端使用 string 避免精度丢失
   name: string
+  originalFilename?: string // 原始文件名（用户上传时的真实文件名）
   videoDuration: number
   status: string
   timeoutThreshold: number
