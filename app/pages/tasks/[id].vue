@@ -19,7 +19,7 @@ interface Bounds {
 
 const route = useRoute()
 const { getTask, getTaskStatus, getTaskResult, reanalyzeTask } = useTaskApi()
-const { connect, disconnect, subscribeToTask, subscribeToTaskDetailUpdate, isConnected } = useWebSocket()
+const { connect, disconnect, subscribeToTask, subscribeToTaskDetailUpdate } = useWebSocket()
 const toast = useToast()
 
 const taskId = route.params.id as string
