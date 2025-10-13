@@ -10,35 +10,77 @@ const props = defineProps<{
 const { exportToHTML, exportToPDF } = useReportGenerator()
 const toast = useToast()
 
+// 验证 props
+if (!props.task || !props.result) {
+  console.error('ReportGenerator: 缺少必要的 task 或 result 数据')
+}
+
 // 从后端TaskConfig获取视频帧率，如果没有则使用默认值25
 const fps = computed(() => {
-  return props.task.config?.frameRate ?? 25
+  return props.task?.config?.frameRate ?? 25
 })
 
 // 准备报告数据
-const reportData = computed<ReportData>(() => ({
-  task: props.task,
-  result: props.result,
-  fps: fps.value
-}))
+const reportData = computed<ReportData>(() => {
+  if (!props.task || !props.result) {
+    throw new Error('缺少必要的任务或结果数据')
+  }
+  return {
+    task: props.task,
+    result: props.result,
+    fps: fps.value
+  }
+})
 
-const exporting = ref(false)
+const exportingHTML = ref(false)
+const exportingPDF = ref(false)
 const isPreviewOpen = ref(false)
+
+// 计算是否正在导出
+const isExporting = computed(() => exportingHTML.value || exportingPDF.value)
+
+/**
+ * 等待报告预览组件完全渲染
+ */
+const waitForReportRender = async () => {
+  // 等待 DOM 更新
+  await nextTick()
+
+  // 检查预览容器是否存在并包含内容
+  let attempts = 0
+  const maxAttempts = 20 // 最多等待 2 秒
+
+  while (attempts < maxAttempts) {
+    const container = document.querySelector('.report-preview-container')
+    if (container && container.children.length > 0) {
+      // 找到容器且有内容，再等待一小段时间确保样式应用
+      await new Promise(resolve => setTimeout(resolve, 100))
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, 100))
+    attempts++
+  }
+
+  // 如果超时，仍然继续，但给出警告
+  console.warn('报告预览渲染检测超时，可能导致导出不完整')
+}
 
 /**
  * 导出为 HTML
  */
 const handleExportHTML = async () => {
-  // 如果预览未打开，先打开预览
-  if (!isPreviewOpen.value) {
-    isPreviewOpen.value = true
-    // 等待 DOM 更新
-    await nextTick()
-    // 再等待一小段时间确保组件完全渲染
-    await new Promise(resolve => setTimeout(resolve, 500))
+  if (exportingHTML.value) {
+    return // 防止重复点击
   }
 
+  exportingHTML.value = true
   try {
+    // 如果预览未打开，先打开预览
+    if (!isPreviewOpen.value) {
+      isPreviewOpen.value = true
+      await waitForReportRender()
+    }
+
     await exportToHTML(reportData.value)
     toast.add({
       title: '导出成功',
@@ -52,6 +94,8 @@ const handleExportHTML = async () => {
       description: error instanceof Error ? error.message : '导出 HTML 报告时发生错误',
       color: 'error'
     })
+  } finally {
+    exportingHTML.value = false
   }
 }
 
@@ -59,17 +103,18 @@ const handleExportHTML = async () => {
  * 导出为 PDF
  */
 const handleExportPDF = async () => {
-  // 如果预览未打开，先打开预览
-  if (!isPreviewOpen.value) {
-    isPreviewOpen.value = true
-    // 等待 DOM 更新
-    await nextTick()
-    // 再等待一小段时间确保组件完全渲染
-    await new Promise(resolve => setTimeout(resolve, 500))
+  if (exportingPDF.value) {
+    return // 防止重复点击
   }
 
-  exporting.value = true
+  exportingPDF.value = true
   try {
+    // 如果预览未打开，先打开预览
+    if (!isPreviewOpen.value) {
+      isPreviewOpen.value = true
+      await waitForReportRender()
+    }
+
     await exportToPDF(reportData.value)
     toast.add({
       title: '导出成功',
@@ -84,9 +129,10 @@ const handleExportPDF = async () => {
       color: 'error'
     })
   } finally {
-    exporting.value = false
+    exportingPDF.value = false
   }
 }
+
 </script>
 
 <template>
@@ -106,7 +152,8 @@ const handleExportPDF = async () => {
         icon="i-lucide-file-text"
         color="primary"
         variant="outline"
-        :disabled="exporting"
+        :loading="exportingHTML"
+        :disabled="isExporting"
         @click="handleExportHTML"
       >
         导出 HTML 报告
@@ -115,8 +162,8 @@ const handleExportPDF = async () => {
       <UButton
         icon="i-lucide-file-down"
         color="primary"
-        :loading="exporting"
-        :disabled="exporting"
+        :loading="exportingPDF"
+        :disabled="isExporting"
         @click="handleExportPDF"
       >
         导出 PDF 报告
@@ -154,16 +201,18 @@ const handleExportPDF = async () => {
               icon="i-lucide-file-text"
               color="primary"
               variant="outline"
-              @click="handleExportHTML(); isPreviewOpen = false"
+              :loading="exportingHTML"
+              :disabled="isExporting"
+              @click="handleExportHTML"
             >
               导出 HTML
             </UButton>
             <UButton
               icon="i-lucide-file-down"
               color="primary"
-              :loading="exporting"
-              :disabled="exporting"
-              @click="handleExportPDF(); isPreviewOpen = false"
+              :loading="exportingPDF"
+              :disabled="isExporting"
+              @click="handleExportPDF"
             >
               导出 PDF
             </UButton>

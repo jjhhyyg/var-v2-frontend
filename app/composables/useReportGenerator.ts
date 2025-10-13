@@ -631,6 +631,20 @@ export function useReportGenerator() {
   }
 
   /**
+   * 获取图片的真实尺寸
+   */
+  const getImageDimensions = (base64: string): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => {
+        resolve({ width: img.width, height: img.height })
+      }
+      img.onerror = reject
+      img.src = base64
+    })
+  }
+
+  /**
    * 导出为 PDF
    * 使用jsPDF将HTML内容转换为PDF
    */
@@ -724,8 +738,16 @@ export function useReportGenerator() {
 
       for (const chart of charts) {
         if (chart.image) {
-          // 检查是否需要新页面
-          if (yPosition > 240) {
+          // 获取图片的真实尺寸
+          const dimensions = await getImageDimensions(chart.image)
+
+          // 计算保持原始长宽比的图片尺寸
+          const imgWidth = contentWidth
+          const aspectRatio = dimensions.height / dimensions.width
+          const imgHeight = imgWidth * aspectRatio
+
+          // 检查是否需要新页面（考虑图片高度）
+          if (yPosition + imgHeight + 15 > 280) {
             pdf.addPage()
             yPosition = margin
           }
@@ -738,10 +760,7 @@ export function useReportGenerator() {
           pdf.text(`${chart.avg} ${chart.unit}  变化趋势: ${chart.trend}`, margin, yPosition)
           yPosition += 5
 
-          // 添加图表图片
-          const imgWidth = contentWidth
-          const imgHeight = imgWidth * 0.4 // 保持合适的高宽比
-
+          // 添加图表图片，使用真实长宽比
           pdf.addImage(chart.image, 'PNG', margin, yPosition, imgWidth, imgHeight)
           yPosition += imgHeight + 10
         }
