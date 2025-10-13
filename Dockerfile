@@ -8,6 +8,10 @@ LABEL description="VAR熔池视频分析系统 - 前端构建阶段"
 
 WORKDIR /app/frontend
 
+# 接收构建参数（API基础URL配置）
+ARG NUXT_PUBLIC_API_BASE=""
+ENV NUXT_PUBLIC_API_BASE=${NUXT_PUBLIC_API_BASE}
+
 # 启用corepack并配置npm
 RUN corepack enable && corepack prepare npm@11.6.2 --activate
 

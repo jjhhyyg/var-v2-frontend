@@ -25,6 +25,16 @@ export default defineNuxtConfig({
     transpile: ['echarts', 'vue-echarts']
   },
 
+  // 配置图标为离线模式
+  // 由于已经安装了 @iconify-json/lucide 和 @iconify-json/simple-icons
+  // Nuxt 会自动从 node_modules 中读取这些图标数据，无需访问 Iconify API
+  icon: {
+    provider: 'server',
+    serverBundle: {
+      collections: ['lucide', 'simple-icons']
+    }
+  },
+
   // routeRules: {
   //   '/': { ssr: false },
   //   '/tasks/**': { ssr: false }
