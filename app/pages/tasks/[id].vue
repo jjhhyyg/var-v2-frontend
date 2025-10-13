@@ -721,7 +721,7 @@ const statsCards = computed(() => {
 </script>
 
 <template>
-  <div class="container mx-auto p-6 max-w-[80%]">
+  <div class="container mx-auto p-6 max-w-7xl">
     <!-- 返回按钮 -->
     <div class="mb-6">
       <UButton to="/" icon="i-lucide-arrow-left" variant="ghost" color="neutral"> 返回任务列表 </UButton>
