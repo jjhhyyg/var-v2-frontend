@@ -908,11 +908,11 @@ const statsCards = computed(() => {
                 {{ formatTime(status.analyzingElapsedTime) }}
               </p>
             </div>
-            <div v-if="status.timeoutWarning">
+            <div v-if="status.timeoutWarning && !status.isTimeout">
               <UBadge color="warning"> 即将超时 </UBadge>
             </div>
             <div v-if="status.isTimeout">
-              <UBadge color="warning"> 已超时 </UBadge>
+              <UBadge color="error"> 已超时 </UBadge>
             </div>
           </div>
         </div>
