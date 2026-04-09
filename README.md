@@ -2,225 +2,144 @@
 
 [简体中文](README.zh.md) | English
 
-> Modern web interface built with Nuxt 4 for VAR molten pool video analysis system
+> Nuxt frontend for video upload, task monitoring, result display, and report-related UI.
+
+## Responsibilities
+
+The frontend is responsible for:
+
+- uploading videos and creating tasks
+- listing tasks and showing task status
+- displaying task details, metrics, events, and tracked objects
+- subscribing to backend WebSocket updates
+- previewing original, preprocessed, and result videos
 
 ## Tech Stack
 
-- **Framework**: Nuxt 4.1.2 (Vue 3)
-- **Language**: TypeScript 5.9
-- **UI Library**: Nuxt UI 4.0
-- **Charts**: ECharts 6.0 + Chart.js 4.5
-- **Real-time Communication**: STOMP.js + SockJS
-- **Export**: jsPDF + html2canvas
-- **Package Manager**: pnpm (recommended) / npm
+- Nuxt 4
+- Vue 3
+- TypeScript
+- Nuxt UI
+- STOMP.js + SockJS
+- ECharts + Chart.js
 
-## Features
+## Current Configuration
 
-- Modern, responsive UI design
-- Real-time task progress monitoring via WebSocket
-- Interactive data visualization with ECharts
-- Video upload with drag-and-drop support
-- Analysis result display and export
-- Dark mode support
-- PDF report generation
+The frontend currently reads the backend base URL from:
 
-## Prerequisites
+- `NUXT_PUBLIC_API_BASE`
 
-- Node.js 18+ or 20+
-- pnpm 8+ (or npm 9+)
+This value is exposed through `runtimeConfig.public.apiBase` in `nuxt.config.ts`.
 
-## Quick Start
+Do not rely on outdated names such as `NUXT_PUBLIC_API_BASE_URL` or `NUXT_PUBLIC_WS_BASE_URL`.
 
-### 1. Install Dependencies
-
-Using pnpm (recommended):
+Generate `frontend/.env` from the main repository root:
 
 ```bash
-pnpm install
+./scripts/use-env.sh dev
 ```
 
-Using npm:
+Typical local value:
+
+```bash
+NUXT_PUBLIC_API_BASE=http://localhost:8080
+```
+
+## Local Development
+
+Install dependencies:
 
 ```bash
 npm install
 ```
 
-### 2. Configure Environment
-
-Create a `.env` file in the frontend directory (or use the parent project's environment configuration):
+Run the development server:
 
 ```bash
-# API Base URL
-NUXT_PUBLIC_API_BASE_URL=http://localhost:8080
-NUXT_PUBLIC_WS_BASE_URL=ws://localhost:8080
+npm run dev
 ```
 
-### 3. Run Development Server
+Default local URL:
+
+- `http://localhost:3000`
+
+## WebStorm
+
+WebStorm is the recommended IDE for local frontend work:
+
+1. Open the `frontend` directory
+2. Configure the Node.js interpreter
+3. Run `npm install`
+4. Make sure `frontend/.env` already exists
+5. Run `npm run dev`
+6. Use the browser and developer tools to inspect API requests, state updates, and WebSocket behavior
+
+WebStorm is especially useful for:
+
+- UI changes
+- component debugging
+- checking API requests
+- checking WebSocket connection and client-side errors
+
+## Useful Commands
+
+Lint:
 
 ```bash
-pnpm dev
+npm run lint
 ```
 
-The application will start at http://localhost:3000
-
-### 4. Build for Production
+Type check:
 
 ```bash
-pnpm build
+npm run typecheck
 ```
 
-Preview production build:
+Static production build:
 
 ```bash
-pnpm preview
+npm run generate
 ```
 
-## Development
+## Key Files
 
-### Project Structure
+- `app/pages/index.vue`: task list and upload page
+- `app/pages/tasks/[id].vue`: task detail page
+- `app/composables/useTaskApi.ts`: REST API access
+- `app/composables/useWebSocket.ts`: WebSocket subscriptions
+- `nuxt.config.ts`: runtime config and frontend build config
 
-```
-frontend/
-├── app/
-│   ├── components/         # Vue components
-│   ├── composables/        # Composable functions
-│   ├── layouts/            # Layout components
-│   ├── pages/              # Route pages
-│   ├── plugins/            # Nuxt plugins
-│   ├── utils/              # Utility functions
-│   └── app.vue             # Root component
-├── public/                 # Static assets
-├── .nuxt/                  # Generated files (auto-generated)
-├── nuxt.config.ts          # Nuxt configuration
-├── tsconfig.json           # TypeScript configuration
-└── package.json
-```
+## Important Runtime Behavior
 
-### Key Technologies
+- The frontend uses the backend base URL for both HTTP and WebSocket access
+- The WebSocket endpoint is `/ws`
+- The UI expects task status topics under `/topic/tasks/*`
+- This project currently runs with `ssr: false`
 
-#### Nuxt UI
+## Testing Expectations
 
-This project uses [Nuxt UI](https://ui.nuxt.com/) for the component library, which provides:
-- Beautiful, accessible components
-- Built-in dark mode
-- TypeScript support
-- Tailwind CSS integration
+Minimum local checks before deployment:
 
-#### Real-time Updates
+- `npm run lint`
+- `npm run typecheck`
+- verify the homepage loads
+- verify task list requests succeed
+- verify WebSocket connects
+- verify task detail pages render real backend data
 
-WebSocket connection is established using STOMP.js and SockJS for real-time task progress updates:
+## Docker Notes
 
-```typescript
-// Example usage in composables
-const { connect, disconnect } = useWebSocket()
-connect('/ws/progress', (message) => {
-  console.log('Progress update:', message)
-})
-```
+The production Docker image is built from the main repository and uses:
 
-#### Data Visualization
+- static generation during build
+- Nginx for serving frontend assets
+- `NUXT_PUBLIC_API_BASE=""` in production when frontend and backend are reverse proxied under the same origin
 
-ECharts is used for advanced charting capabilities:
-- Line charts for time-series data
-- Bar charts for statistics
-- Custom visualizations for analysis results
+Do not treat a successful frontend build as proof that the whole system is ready. Full local integration testing is still required.
 
-### Code Quality
+## What to Read Next
 
-Run linter:
-
-```bash
-pnpm lint
-```
-
-Fix linting issues:
-
-```bash
-pnpm lint:fix
-```
-
-Type checking:
-
-```bash
-pnpm typecheck
-```
-
-## Configuration
-
-### Nuxt Configuration
-
-Key settings in `nuxt.config.ts`:
-
-```typescript
-export default defineNuxtConfig({
-  modules: ['@nuxt/ui'],
-
-  runtimeConfig: {
-    public: {
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8080',
-      wsBaseUrl: process.env.NUXT_PUBLIC_WS_BASE_URL || 'ws://localhost:8080'
-    }
-  }
-})
-```
-
-### Environment Variables
-
-- `NUXT_PUBLIC_API_BASE_URL` - Backend API base URL
-- `NUXT_PUBLIC_WS_BASE_URL` - WebSocket server URL
-
-## Docker Deployment
-
-Build Docker image:
-
-```bash
-docker build -t var-frontend:latest .
-```
-
-Run with Docker:
-
-```bash
-docker run -p 3000:3000 \
-  -e NUXT_PUBLIC_API_BASE_URL=http://api.example.com \
-  var-frontend:latest
-```
-
-## Troubleshooting
-
-### Port Already in Use
-
-If port 3000 is already in use, specify a different port:
-
-```bash
-PORT=3001 pnpm dev
-```
-
-### API Connection Issues
-
-Ensure the backend server is running and the `NUXT_PUBLIC_API_BASE_URL` is correctly set.
-
-### WebSocket Connection Failed
-
-Check that:
-1. Backend WebSocket endpoint is accessible
-2. `NUXT_PUBLIC_WS_BASE_URL` is correct
-3. No firewall blocking WebSocket connections
-
-## Performance Optimization
-
-- Use `pnpm build` for optimized production builds
-- Enable server-side rendering (SSR) for better SEO
-- Lazy load components with `defineAsyncComponent`
-- Optimize images in the `public/` directory
-
-## Browser Support
-
-- Chrome/Edge (latest 2 versions)
-- Firefox (latest 2 versions)
-- Safari (latest 2 versions)
-
-## License
-
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) - see the [LICENSE](LICENSE) file for details.
-
-**Important:** Any modified version of this software used over a network must make the source code available to users.
+- Main repository overview:
+  `https://github.com/jjhhyyg/VAR-melting-defect-detection-source-code.git`
+- Main handover guide in the root repository:
+  `docs/项目接手、开发测试与部署指南.md`
