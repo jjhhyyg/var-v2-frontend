@@ -1,10 +1,7 @@
 /**
- * 任务相关API
+ * 桌面版任务 API
  */
 
-/**
- * 任务配置数据（仅包含配置参数）
- */
 export interface TaskConfig {
   timeoutRatio?: string
   modelVersion?: string
@@ -16,112 +13,107 @@ export interface TaskConfig {
   trackingMergeStrategy?: string
 }
 
-/**
- * 任务响应（对应后端 TaskResponse）
- */
 export interface Task {
-  taskId: string // 后端 Long 类型，前端使用 string 避免精度丢失
+  taskId: string
   name: string
-  originalFilename?: string // 原始文件名（用户上传时的真实文件名）
+  originalFilename?: string
   videoDuration: number
   status: string
   timeoutThreshold: number
   isTimeout: boolean
   config?: TaskConfig
-  createdAt: string // ISO 8601 格式时间字符串
+  createdAt: string
   startedAt?: string
   preprocessingCompletedAt?: string
   completedAt?: string
   failureReason?: string
   resultVideoPath?: string
   preprocessedVideoPath?: string
+  queuePosition?: number
 }
 
-/**
- * 任务状态响应（对应后端 TaskStatusResponse）
- */
 export interface TaskStatus {
-  taskId: string // 后端 Long 类型，前端使用 string 避免精度丢失
+  taskId: string
   status: string
   phase?: string
-  progress?: number // 0.0~1.0
+  progress?: number
   currentFrame?: number
   totalFrames?: number
-  preprocessingDuration?: number // 秒
-  analyzingElapsedTime?: number // 秒
+  preprocessingDuration?: number
+  analyzingElapsedTime?: number
   isTimeout?: boolean
   timeoutWarning?: boolean
   failureReason?: string
+  queuePosition?: number
 }
 
-/**
- * 动态参数数据（每帧的亮度、面积、周长）
- */
+export interface BatchImportItem {
+  filePath: string
+  name?: string
+}
+
+export interface BatchImportFailure {
+  filePath: string
+  fileName: string
+  reason: string
+}
+
+export interface BatchImportResult {
+  createdTasks: Task[]
+  failedFiles: BatchImportFailure[]
+  queuedTaskIds: string[]
+}
+
 export interface DynamicMetric {
   frameNumber: number
   timestamp: number
-  brightness?: number // 熔池亮度值
-  poolArea?: number // 熔池面积（像素）
-  poolPerimeter?: number // 熔池周长（像素）
+  brightness?: number
+  poolArea?: number
+  poolPerimeter?: number
 }
 
-/**
- * 异常事件数据
- */
 export interface AnomalyEvent {
-  eventId: string // 后端 Long 类型，前端使用 string 避免精度丢失
+  eventId: string
   eventType: string
   startFrame: number
   endFrame: number
-  objectId?: string // 修改为 string 以保持一致性
+  objectId?: string
   metadata?: Record<string, unknown>
 }
 
-/**
- * 轨迹点数据
- */
 export interface TrajectoryPoint {
   bbox: [number, number, number, number]
   frame: number
   confidence: number
 }
 
-/**
- * 追踪物体数据
- */
 export interface TrackingObject {
-  trackingId: string // 后端 Long 类型，前端使用 string 避免精度丢失
-  objectId: string // 修改为 string 以保持一致性
+  trackingId: string
+  objectId: string
   category: string
   firstFrame: number
   lastFrame: number
-  trajectory?: TrajectoryPoint[] // 明确定义为轨迹点数组
+  trajectory?: TrajectoryPoint[]
 }
 
-/**
- * 全局分析数据
- */
 export interface GlobalAnalysisMetric {
   frequency?: number
   trend?: string
   mean?: number
-  [key: string]: unknown // 允许其他动态属性
+  [key: string]: unknown
 }
 
-/**
- * 任务结果响应（对应后端 TaskResultResponse）
- */
 export interface TaskResult {
-  taskId: string // 后端 Long 类型,前端使用 string 避免精度丢失
+  taskId: string
   name: string
   status: string
   isTimeout: boolean
-  dynamicMetrics: DynamicMetric[] // 每帧的动态参数（亮度、面积、周长）
-  globalAnalysis?: Record<string, GlobalAnalysisMetric> // 全局频率分析结果（闪烁频率、趋势等）
+  dynamicMetrics: DynamicMetric[]
+  globalAnalysis?: Record<string, GlobalAnalysisMetric>
   anomalyEvents: AnomalyEvent[]
   trackingObjects: TrackingObject[]
-  eventStatistics: Record<string, number> // 事件类型 -> 数量
-  objectStatistics: Record<string, number> // 物体类别 -> 数量
+  eventStatistics: Record<string, number>
+  objectStatistics: Record<string, number>
 }
 
 export interface PageResult<T> {
@@ -134,98 +126,111 @@ export interface PageResult<T> {
   hasPrevious: boolean
 }
 
+export type TaskSortField = 'createdAt' | 'status' | 'completedAt'
+export type TaskSortDirection = 'asc' | 'desc'
+
 export const useTaskApi = () => {
-  const { request } = useApi()
+  const { invokeCommand } = useDesktopBridge()
 
-  /**
-   * 上传视频并创建任务
-   */
-  const uploadTask = async (file: File, name?: string, config?: TaskConfig): Promise<Task> => {
-    const formData = new FormData()
-    formData.append('video', file)
-    if (name) formData.append('name', name)
-    if (config?.timeoutRatio) formData.append('timeoutRatio', config.timeoutRatio)
-    if (config?.enablePreprocessing !== undefined) formData.append('enablePreprocessing', String(config.enablePreprocessing))
-    if (config?.preprocessingStrength) formData.append('preprocessingStrength', config.preprocessingStrength)
-    if (config?.preprocessingEnhancePool !== undefined) formData.append('preprocessingEnhancePool', String(config.preprocessingEnhancePool))
-    if (config?.enableTrackingMerge !== undefined) formData.append('enableTrackingMerge', String(config.enableTrackingMerge))
-    if (config?.trackingMergeStrategy) formData.append('trackingMergeStrategy', config.trackingMergeStrategy)
-
-    return request<Task>('/api/tasks/upload', {
-      method: 'POST',
-      body: formData
+  const uploadTask = async (filePath: string, name?: string, config?: TaskConfig): Promise<Task> => {
+    return invokeCommand<Task>('import_video_task', {
+      request: {
+        filePath,
+        name,
+        config
+      }
     })
   }
 
-  /**
-   * 获取任务列表
-   */
-  const listTasks = async (page = 0, size = 20, status?: string): Promise<PageResult<Task>> => {
-    const params: Record<string, string | number> = { page, size }
-    if (status) params.status = status
-
-    return request<PageResult<Task>>('/api/tasks', {
-      method: 'GET',
-      params
+  const importVideoTasks = async (
+    items: BatchImportItem[],
+    config?: TaskConfig,
+    autoStart = false
+  ): Promise<BatchImportResult> => {
+    return invokeCommand<BatchImportResult>('import_video_tasks', {
+      request: {
+        items,
+        config,
+        autoStart
+      }
     })
   }
 
-  /**
-   * 获取任务详情
-   */
+  const listTasks = async (
+    page = 0,
+    size = 20,
+    status?: string,
+    sortBy?: TaskSortField,
+    sortDirection?: TaskSortDirection
+  ): Promise<PageResult<Task>> => {
+    return invokeCommand<PageResult<Task>>('list_tasks', {
+      request: {
+        page,
+        size,
+        status,
+        sortBy,
+        sortDirection
+      }
+    })
+  }
+
   const getTask = async (taskId: string): Promise<Task> => {
-    return request<Task>(`/api/tasks/${taskId}`)
+    return invokeCommand<Task>('get_task', { taskId })
   }
 
-  /**
-   * 获取任务状态
-   */
   const getTaskStatus = async (taskId: string): Promise<TaskStatus> => {
-    return request<TaskStatus>(`/api/tasks/${taskId}/status`)
+    return invokeCommand<TaskStatus>('get_task_status', { taskId })
   }
 
-  /**
-   * 获取任务结果
-   */
   const getTaskResult = async (taskId: string): Promise<TaskResult> => {
-    return request<TaskResult>(`/api/tasks/${taskId}/result`)
+    return invokeCommand<TaskResult>('get_task_result', { taskId })
   }
 
-  /**
-   * 开始任务分析
-   */
   const startAnalysis = async (taskId: string): Promise<string> => {
-    return request<string>(`/api/tasks/${taskId}/start`, {
-      method: 'POST'
-    })
+    return invokeCommand<string>('start_task', { taskId })
   }
 
-  /**
-   * 重新分析任务
-   */
   const reanalyzeTask = async (taskId: string): Promise<string> => {
-    return request<string>(`/api/tasks/${taskId}/reanalyze`, {
-      method: 'POST'
+    return invokeCommand<string>('reanalyze_task', { taskId })
+  }
+
+  const dequeueTask = async (taskId: string): Promise<string> => {
+    return invokeCommand<string>('dequeue_task', { taskId })
+  }
+
+  const deleteTask = async (taskId: string): Promise<string> => {
+    return invokeCommand<string>('delete_task', { taskId })
+  }
+
+  const getVideoStreamUrl = async (taskId: string, videoType: 'original' | 'preprocessed' | 'result'): Promise<string> => {
+    return invokeCommand<string>('get_video_stream_url', {
+      taskId,
+      videoType
     })
   }
 
-  /**
-   * 删除任务
-   */
-  const deleteTask = async (taskId: string): Promise<string> => {
-    return request<string>(`/api/tasks/${taskId}`, {
-      method: 'DELETE'
+  const exportReportFile = async (path: string, options: { textContent?: string, base64Content?: string }): Promise<string> => {
+    return invokeCommand<string>('export_report_file', {
+      request: {
+        path,
+        textContent: options.textContent,
+        base64Content: options.base64Content
+      }
     })
   }
 
   return {
     uploadTask,
+    importVideoTasks,
     listTasks,
     getTask,
     getTaskStatus,
     getTaskResult,
     startAnalysis,
     reanalyzeTask,
-    deleteTask
+    dequeueTask,
+    deleteTask,
+    getVideoStreamUrl,
+    exportReportFile
   }
 }

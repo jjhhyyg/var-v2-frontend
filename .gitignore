@@ -27,3 +27,6 @@ yarn.lock
 pnpm-lock.yaml
 .vscode
 .github
+.desktop-worker-venv
+.tauri-worker-build
+.tauri-signing

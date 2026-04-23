@@ -101,6 +101,16 @@ npm run typecheck
 npm run generate
 ```
 
+macOS 桌面端发布：
+
+```bash
+npm run desktop:macos:ad-hoc
+npm run desktop:macos:release-local
+npm run desktop:macos:release-public
+```
+
+`tauri dev`、raw `tauri build` 与仓库发布编排脚本的职责边界，见 `../docs/macOS桌面端发布指南.md`。
+
 ## 关键文件
 
 - `app/pages/index.vue`：任务列表与上传入口

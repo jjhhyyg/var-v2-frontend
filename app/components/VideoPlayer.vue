@@ -399,16 +399,11 @@ const selectedEventId = ref<string | null>(null)
 const isDraggingTimeline = ref(false)
 const wasPlayingBeforeDrag = ref(false)
 const dragTimePercentage = ref(0)
-
-// 获取后端API基础URL
-const { baseURL } = useApi()
+const currentVideoUrl = ref('')
+const { getVideoStreamUrl } = useTaskApi()
 
 const hasResultVideo = computed(() => !!props.resultVideoPath)
 const hasPreprocessedVideo = computed(() => !!props.preprocessedVideoPath)
-
-const currentVideoUrl = computed(() => {
-  return `${baseURL}/api/videos/${props.taskId}/${videoType.value}`
-})
 
 const progressPercentage = computed(() => {
   // 拖动时使用拖动进度，否则使用实际播放进度
@@ -447,8 +442,27 @@ const sortedEvents = computed(() => {
   return [...props.events].sort((a, b) => a.startFrame - b.startFrame)
 })
 
+const loadVideoSource = async (type: 'original' | 'preprocessed' | 'result') => {
+  if (type === 'result' && !hasResultVideo.value) return
+  if (type === 'preprocessed' && !hasPreprocessedVideo.value) return
+
+  videoLoading.value = true
+  videoError.value = false
+
+  try {
+    currentVideoUrl.value = await getVideoStreamUrl(props.taskId, type)
+    await nextTick()
+    videoPlayer.value?.load()
+  } catch (error) {
+    console.error('加载视频地址失败:', error)
+    videoLoading.value = false
+    videoError.value = true
+    videoErrorMessage.value = error instanceof Error ? error.message : '无法获取视频播放地址'
+  }
+}
+
 // 切换视频
-const switchVideo = (type: 'original' | 'preprocessed' | 'result') => {
+const switchVideo = async (type: 'original' | 'preprocessed' | 'result') => {
   if (type === 'result' && !hasResultVideo.value) return
   if (type === 'preprocessed' && !hasPreprocessedVideo.value) return
 
@@ -456,13 +470,10 @@ const switchVideo = (type: 'original' | 'preprocessed' | 'result') => {
   const wasPlaying = isPlaying.value
 
   videoType.value = type
+  await loadVideoSource(type)
 
-  // 需要在下一个tick中重新加载视频,因为src需要先更新
   nextTick(() => {
     if (videoPlayer.value) {
-      // 重新加载视频源
-      videoPlayer.value.load()
-
       // 监听加载完成事件,恢复播放位置
       videoPlayer.value.addEventListener(
         'loadedmetadata',
@@ -535,12 +546,10 @@ const onVideoError = () => {
 }
 
 // 重新加载视频
-const retryLoadVideo = () => {
+const retryLoadVideo = async () => {
   videoError.value = false
   videoLoading.value = true
-  if (videoPlayer.value) {
-    videoPlayer.value.load()
-  }
+  await loadVideoSource(videoType.value)
 }
 
 // 切换播放/暂停
@@ -841,6 +850,14 @@ const jumpToFrame = () => {
   // 跳转到目标帧的起始时间（帧号从1开始，时间从0开始），加上小的偏移量
   videoPlayer.value.currentTime = (clampedFrame - 1) / fps.value + 0.001
 }
+
+watch(
+  () => [props.taskId, props.resultVideoPath, props.preprocessedVideoPath],
+  async () => {
+    await loadVideoSource(videoType.value)
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>

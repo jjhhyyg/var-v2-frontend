@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VAR Desktop",
+  "version": "0.1.0",
+  "identifier": "cn.edu.ustb.hyy.var-desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "npm run generate && npm run desktop:build-worker",
+    "frontendDist": "../.output/public"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "VAR 熔池分析桌面端",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 1180,
+        "minHeight": 760,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true
+    },
+    "targets": ["app", "dmg"],
+    "resources": [
+      "resources/placeholder.txt",
+      "resources/models/**/*",
+      "resources/runtime/**/*"
+    ]
+  }
+}

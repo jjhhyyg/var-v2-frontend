@@ -539,6 +539,7 @@ const handleStatusUpdate = async (newStatus: TaskStatus) => {
   // 同时更新task对象的状态字段，确保UI同步更新
   if (task.value) {
     task.value.status = newStatus.status
+    task.value.queuePosition = newStatus.queuePosition
   }
 
   // 如果任务已完成，加载结果并重新加载完整任务信息
@@ -555,6 +556,7 @@ const getStatusColor = (
 ): 'error' | 'info' | 'success' | 'primary' | 'secondary' | 'warning' | 'neutral' => {
   const colors: Record<string, 'error' | 'info' | 'success' | 'primary' | 'secondary' | 'warning' | 'neutral'> = {
     PENDING: 'neutral',
+    QUEUED: 'warning',
     PREPROCESSING: 'info',
     ANALYZING: 'primary',
     COMPLETED: 'success',
@@ -568,6 +570,7 @@ const getStatusColor = (
 const getStatusText = (statusStr: string) => {
   const texts: Record<string, string> = {
     PENDING: '等待中',
+    QUEUED: '排队中',
     PREPROCESSING: '预处理中',
     ANALYZING: '分析中',
     COMPLETED: '已完成',
@@ -605,7 +608,7 @@ const handleReanalyze = async () => {
     await reanalyzeTask(taskId)
     toast.add({
       title: '操作成功',
-      description: '任务已重新开始分析',
+      description: '任务已重新加入分析队列',
       color: 'success'
     })
 
@@ -797,6 +800,12 @@ const statsCards = computed(() => {
             <p class="text-sm text-muted">开始时间</p>
             <p class="text-lg font-semibold">
               {{ new Date(task.startedAt).toLocaleString('zh-CN') }}
+            </p>
+          </div>
+          <div v-if="task.status === 'QUEUED' && task.queuePosition">
+            <p class="text-sm text-muted">队列位置</p>
+            <p class="text-lg font-semibold">
+              #{{ task.queuePosition }}
             </p>
           </div>
           <div v-if="task.completedAt">

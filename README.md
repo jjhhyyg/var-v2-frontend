@@ -101,6 +101,16 @@ Static production build:
 npm run generate
 ```
 
+macOS desktop release:
+
+```bash
+npm run desktop:macos:ad-hoc
+npm run desktop:macos:release-local
+npm run desktop:macos:release-public
+```
+
+For the responsibility split between `tauri dev`, raw `tauri build`, and the repository release orchestrator, read `../docs/macOS桌面端发布指南.md`.
+
 ## Key Files
 
 - `app/pages/index.vue`: task list and upload page

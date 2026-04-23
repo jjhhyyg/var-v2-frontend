@@ -26,6 +26,9 @@ const eventTypeMap: Record<string, string> = {
 }
 
 export function useReportGenerator() {
+  const { pickSavePath } = useDesktopBridge()
+  const { exportReportFile } = useTaskApi()
+
   /**
    * 计算平均值（与ReportPreview.vue保持一致）
    */
@@ -588,16 +591,21 @@ export function useReportGenerator() {
 </html>
       `
 
-      // 创建下载链接
-      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `熔池分析报告_${data.task.name}_${new Date().getTime()}.html`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+      const defaultPath = `熔池分析报告_${data.task.name}_${new Date().getTime()}.html`
+      const savePath = await pickSavePath(defaultPath, [
+        {
+          name: 'HTML 报告',
+          extensions: ['html']
+        }
+      ])
+
+      if (!savePath) {
+        return
+      }
+
+      await exportReportFile(savePath, {
+        textContent: htmlContent
+      })
     } catch (error) {
       console.error('生成 HTML 失败:', error)
       throw new Error('生成 HTML 时发生错误')
@@ -811,7 +819,7 @@ export function useReportGenerator() {
 
         headers.forEach((header, index) => {
           pdf.text(header, xPosition, yPosition)
-          xPosition += colWidths[index]
+          xPosition += colWidths[index] ?? 0
         })
 
         yPosition += 6
@@ -834,7 +842,7 @@ export function useReportGenerator() {
             xPosition = margin
             headers.forEach((header, index) => {
               pdf.text(header, xPosition, yPosition)
-              xPosition += colWidths[index]
+              xPosition += colWidths[index] ?? 0
             })
             yPosition += 6
             pdf.setLineWidth(0.5)
@@ -847,22 +855,22 @@ export function useReportGenerator() {
 
           // 事件类型
           pdf.text(event.eventType, xPosition, yPosition)
-          xPosition += colWidths[0]
+          xPosition += colWidths[0] ?? 0
 
           // 开始时间
           pdf.text(event.startTime, xPosition, yPosition)
-          xPosition += colWidths[1]
+          xPosition += colWidths[1] ?? 0
 
           // 结束时间
           pdf.text(event.endTime, xPosition, yPosition)
-          xPosition += colWidths[2]
+          xPosition += colWidths[2] ?? 0
 
           // 持续时间
           pdf.text(event.duration, xPosition, yPosition)
-          xPosition += colWidths[3]
+          xPosition += colWidths[3] ?? 0
 
           // 详细信息（处理长文本）
-          const maxWidth = colWidths[4] - 5
+          const maxWidth = (colWidths[4] ?? 0) - 5
           const detailsLines = pdf.splitTextToSize(event.details, maxWidth)
           pdf.text(detailsLines, xPosition, yPosition)
 
@@ -870,8 +878,31 @@ export function useReportGenerator() {
         }
       }
 
-      // 保存 PDF
-      pdf.save(`熔池分析报告_${data.task.name}_${new Date().getTime()}.pdf`)
+      const defaultPath = `熔池分析报告_${data.task.name}_${new Date().getTime()}.pdf`
+      const savePath = await pickSavePath(defaultPath, [
+        {
+          name: 'PDF 报告',
+          extensions: ['pdf']
+        }
+      ])
+
+      if (!savePath) {
+        return
+      }
+
+      const pdfArrayBuffer = pdf.output('arraybuffer')
+      const pdfBytes = new Uint8Array(pdfArrayBuffer)
+      let binary = ''
+      const chunkSize = 0x8000
+
+      for (let index = 0; index < pdfBytes.length; index += chunkSize) {
+        const chunk = pdfBytes.subarray(index, index + chunkSize)
+        binary += String.fromCharCode(...chunk)
+      }
+
+      await exportReportFile(savePath, {
+        base64Content: btoa(binary)
+      })
     } catch (error) {
       console.error('生成 PDF 失败:', error)
       throw new Error('生成 PDF 时发生错误')
