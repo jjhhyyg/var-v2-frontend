@@ -30,3 +30,8 @@ pnpm-lock.yaml
 .desktop-worker-venv
 .tauri-worker-build
 .tauri-signing
+
+# Generated desktop packaging resources.
+# Recreated by `npm run desktop:build-worker`.
+src-tauri/resources/runtime/
+src-tauri/resources/models/

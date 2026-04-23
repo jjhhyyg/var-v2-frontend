@@ -40,6 +40,10 @@ npm run desktop:macos:release-public
 - `src-tauri/src/lib.rs`：桌面端数据库、队列调度、worker 管理、文件管理
 - `scripts/macos-release.mjs`：macOS 发布编排
 
+## 打包资源规则
+
+`src-tauri/resources/runtime/` 和 `src-tauri/resources/models/` 是 `npm run desktop:build-worker` 生成的打包资源，不提交到 Git。源码仓只保留 `src-tauri/resources/placeholder.txt` 维持目录结构。
+
 ## 图标约束
 
 新增 Nuxt Icon 后需要确认图标进入 Nuxt Icon client bundle：
