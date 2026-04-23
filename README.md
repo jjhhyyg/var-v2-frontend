@@ -1,107 +1,26 @@
-# VAR Molten Pool Analysis System - Frontend
+# VAR Molten Pool Analysis Desktop Frontend
 
 [简体中文](README.zh.md) | English
 
-> Nuxt frontend for video upload, task monitoring, result display, and report-related UI.
+> The current frontend targets the macOS Tauri desktop app. It no longer depends on the legacy Spring Boot backend, WebSocket service, Docker, or Nginx deployment path.
 
 ## Responsibilities
 
-The frontend is responsible for:
+- Provide the Nuxt 4 + Vue 3 + Nuxt UI desktop interface
+- Manage the media library, task database, task queue, and settings through Tauri commands
+- Support batch video import, FIFO queueing, limited concurrency, restart recovery, and result display
+- Subscribe to Tauri events for task status, queue positions, and detail updates
+- Coordinate the macOS worker, ffmpeg/ffprobe, model, and runtime resources
 
-- uploading videos and creating tasks
-- listing tasks and showing task status
-- displaying task details, metrics, events, and tracked objects
-- subscribing to backend WebSocket updates
-- previewing original, preprocessed, and result videos
-
-## Tech Stack
-
-- Nuxt 4
-- Vue 3
-- TypeScript
-- Nuxt UI
-- STOMP.js + SockJS
-- ECharts + Chart.js
-
-## Current Configuration
-
-The frontend currently reads the backend base URL from:
-
-- `NUXT_PUBLIC_API_BASE`
-
-This value is exposed through `runtimeConfig.public.apiBase` in `nuxt.config.ts`.
-
-Do not rely on outdated names such as `NUXT_PUBLIC_API_BASE_URL` or `NUXT_PUBLIC_WS_BASE_URL`.
-
-Generate `frontend/.env` from the main repository root:
-
-```bash
-./scripts/use-env.sh dev
-```
-
-Typical local value:
-
-```bash
-NUXT_PUBLIC_API_BASE=http://localhost:8080
-```
-
-## Local Development
-
-Install dependencies:
+## Commands
 
 ```bash
 npm install
-```
-
-Run the development server:
-
-```bash
-npm run dev
-```
-
-Default local URL:
-
-- `http://localhost:3000`
-
-## WebStorm
-
-WebStorm is the recommended IDE for local frontend work:
-
-1. Open the `frontend` directory
-2. Configure the Node.js interpreter
-3. Run `npm install`
-4. Make sure `frontend/.env` already exists
-5. Run `npm run dev`
-6. Use the browser and developer tools to inspect API requests, state updates, and WebSocket behavior
-
-WebStorm is especially useful for:
-
-- UI changes
-- component debugging
-- checking API requests
-- checking WebSocket connection and client-side errors
-
-## Useful Commands
-
-Lint:
-
-```bash
-npm run lint
-```
-
-Type check:
-
-```bash
+npm run desktop:dev
 npm run typecheck
 ```
 
-Static production build:
-
-```bash
-npm run generate
-```
-
-macOS desktop release:
+macOS release commands must be run from `frontend/`:
 
 ```bash
 npm run desktop:macos:ad-hoc
@@ -109,47 +28,33 @@ npm run desktop:macos:release-local
 npm run desktop:macos:release-public
 ```
 
-For the responsibility split between `tauri dev`, raw `tauri build`, and the repository release orchestrator, read `../docs/macOS桌面端发布指南.md`.
+Do not mix `tauri dev`, raw `tauri build`, and the formal macOS release scripts. The trusted release entrypoint is `scripts/macos-release.mjs` and the matching npm scripts.
 
 ## Key Files
 
-- `app/pages/index.vue`: task list and upload page
-- `app/pages/tasks/[id].vue`: task detail page
-- `app/composables/useTaskApi.ts`: REST API access
-- `app/composables/useWebSocket.ts`: WebSocket subscriptions
-- `nuxt.config.ts`: runtime config and frontend build config
+- `app/pages/index.vue`: batch import, task creation, task table, queue actions
+- `app/pages/tasks/[id].vue`: task details, video preview, analysis results
+- `app/app.vue`: global header, app settings, restart recovery, close confirmation
+- `app/composables/useTaskApi.ts`: Tauri command API wrapper
+- `app/composables/useWebSocket.ts`: Tauri event subscription wrapper; the name is retained but it is no longer WebSocket
+- `src-tauri/src/lib.rs`: desktop database, queue scheduler, worker management, file management
+- `scripts/macos-release.mjs`: macOS release orchestration
 
-## Important Runtime Behavior
+## Icon Rule
 
-- The frontend uses the backend base URL for both HTTP and WebSocket access
-- The WebSocket endpoint is `/ws`
-- The UI expects task status topics under `/topic/tasks/*`
-- This project currently runs with `ssr: false`
+After adding a Nuxt Icon, verify that it is included in the Nuxt Icon client bundle:
 
-## Testing Expectations
+```bash
+node ../.codex/skills/nuxt-icon-client-bundle/scripts/verify-nuxt-icon-client-bundle.mjs
+```
 
-Minimum local checks before deployment:
+## Testing
 
-- `npm run lint`
 - `npm run typecheck`
-- verify the homepage loads
-- verify task list requests succeed
-- verify WebSocket connects
-- verify task detail pages render real backend data
+- `cargo check --manifest-path src-tauri/Cargo.toml`
+- Real macOS desktop UI test with imported video analysis
 
-## Docker Notes
+## Further Reading
 
-The production Docker image is built from the main repository and uses:
-
-- static generation during build
-- Nginx for serving frontend assets
-- `NUXT_PUBLIC_API_BASE=""` in production when frontend and backend are reverse proxied under the same origin
-
-Do not treat a successful frontend build as proof that the whole system is ready. Full local integration testing is still required.
-
-## What to Read Next
-
-- Main repository overview:
-  `https://github.com/jjhhyyg/VAR-melting-defect-detection-source-code.git`
-- Main handover guide in the root repository:
-  `docs/项目接手、开发测试与部署指南.md`
+- `../docs/macOS桌面端发布指南.md`
+- `../docs/桌面端完整功能验证清单.md`

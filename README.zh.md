@@ -1,107 +1,26 @@
-# VAR 熔池视频分析系统 - 前端应用
+# VAR 熔池分析桌面端 - 前端与 Tauri 外壳
 
 简体中文 | [English](README.md)
 
-> 负责视频上传、任务监控、结果展示和报告相关 UI 的 Nuxt 前端。
+> 当前前端以 macOS Tauri 桌面端为主，不再依赖旧的 Spring Boot 后端、WebSocket 服务或 Docker/Nginx 部署链路。
 
 ## 模块职责
 
-前端主要负责：
-
-- 上传视频并创建任务
-- 展示任务列表和任务状态
-- 展示任务详情、动态指标、异常事件、追踪对象
-- 订阅后端 WebSocket 实时更新
-- 预览原视频、预处理视频和结果视频
-
-## 技术栈
-
-- Nuxt 4
-- Vue 3
-- TypeScript
-- Nuxt UI
-- STOMP.js + SockJS
-- ECharts + Chart.js
-
-## 当前真实配置口径
-
-前端当前读取的后端基础地址变量是：
-
-- `NUXT_PUBLIC_API_BASE`
-
-它会在 `nuxt.config.ts` 中映射到 `runtimeConfig.public.apiBase`。
-
-不要再沿用过时的变量名，例如 `NUXT_PUBLIC_API_BASE_URL` 或 `NUXT_PUBLIC_WS_BASE_URL`。
-
-应从主仓库根目录生成 `frontend/.env`：
-
-```bash
-./scripts/use-env.sh dev
-```
-
-本地典型值：
-
-```bash
-NUXT_PUBLIC_API_BASE=http://localhost:8080
-```
-
-## 本地开发
-
-安装依赖：
-
-```bash
-npm install
-```
-
-启动开发服务器：
-
-```bash
-npm run dev
-```
-
-默认本地地址：
-
-- `http://localhost:3000`
-
-## WebStorm
-
-本地前端开发推荐使用 WebStorm：
-
-1. 打开 `frontend` 目录
-2. 配置 Node.js 解释器
-3. 执行 `npm install`
-4. 确认 `frontend/.env` 已存在
-5. 运行 `npm run dev`
-6. 结合浏览器开发者工具查看接口请求、状态更新与 WebSocket
-
-WebStorm 特别适合：
-
-- 调整页面和组件
-- 观察接口请求
-- 定位前端运行时错误
-- 观察 WebSocket 是否建立成功
+- 提供 Nuxt 4 + Vue 3 + Nuxt UI 的桌面端界面
+- 通过 Tauri command 管理媒体库、任务数据库、任务队列和设置
+- 支持批量导入视频、FIFO 队列、有限并发、重启恢复和结果展示
+- 订阅 Tauri 事件更新任务状态、队列位置和详情页结果
+- 编排 macOS worker、ffmpeg/ffprobe、模型和运行时资源
 
 ## 常用命令
 
-代码检查：
-
 ```bash
-npm run lint
-```
-
-类型检查：
-
-```bash
+npm install
+npm run desktop:dev
 npm run typecheck
 ```
 
-静态生产构建：
-
-```bash
-npm run generate
-```
-
-macOS 桌面端发布：
+macOS 发布命令必须从 `frontend/` 目录运行：
 
 ```bash
 npm run desktop:macos:ad-hoc
@@ -109,47 +28,33 @@ npm run desktop:macos:release-local
 npm run desktop:macos:release-public
 ```
 
-`tauri dev`、raw `tauri build` 与仓库发布编排脚本的职责边界，见 `../docs/macOS桌面端发布指南.md`。
+不要把 `tauri dev`、raw `tauri build` 和正式 macOS 发布脚本混用。可信发布入口是 `scripts/macos-release.mjs` 及对应 npm scripts。
 
 ## 关键文件
 
-- `app/pages/index.vue`：任务列表与上传入口
-- `app/pages/tasks/[id].vue`：任务详情页
-- `app/composables/useTaskApi.ts`：REST API 封装
-- `app/composables/useWebSocket.ts`：WebSocket 订阅
-- `nuxt.config.ts`：运行时配置与构建配置
+- `app/pages/index.vue`：批量导入、任务创建、任务表格、队列操作
+- `app/pages/tasks/[id].vue`：任务详情、视频预览、分析结果
+- `app/app.vue`：全局 Header、应用设置、重启恢复、关闭确认
+- `app/composables/useTaskApi.ts`：Tauri command API 封装
+- `app/composables/useWebSocket.ts`：Tauri 事件订阅封装，名称保留但已不是 WebSocket
+- `src-tauri/src/lib.rs`：桌面端数据库、队列调度、worker 管理、文件管理
+- `scripts/macos-release.mjs`：macOS 发布编排
 
-## 运行时关键事实
+## 图标约束
 
-- 前端使用同一个后端基础地址处理 HTTP 与 WebSocket
-- WebSocket 入口是 `/ws`
-- UI 默认订阅 `/topic/tasks/*`
-- 当前前端配置为 `ssr: false`
+新增 Nuxt Icon 后需要确认图标进入 Nuxt Icon client bundle：
+
+```bash
+node ../.codex/skills/nuxt-icon-client-bundle/scripts/verify-nuxt-icon-client-bundle.mjs
+```
 
 ## 测试要求
 
-部署前至少完成这些本地检查：
-
-- `npm run lint`
 - `npm run typecheck`
-- 首页能正常打开
-- 任务列表请求成功
-- WebSocket 能正常连接
-- 任务详情页能展示来自后端的真实数据
-
-## Docker 说明
-
-生产环境前端镜像由主仓库统一构建，特点是：
-
-- 构建阶段执行静态生成
-- 运行阶段由 Nginx 提供静态资源
-- 生产环境通常使用 `NUXT_PUBLIC_API_BASE=""`，依赖同域反向代理
-
-前端构建成功不代表整套系统已经可部署，完整联调测试仍然是强制要求。
+- `cargo check --manifest-path src-tauri/Cargo.toml`
+- macOS 桌面端真实界面导入视频并跑完整分析
 
 ## 下一步阅读
 
-- 主仓库地址：
-  `https://github.com/jjhhyyg/VAR-melting-defect-detection-source-code.git`
-- 主仓库中的交接文档：
-  `docs/项目接手、开发测试与部署指南.md`
+- `../docs/macOS桌面端发布指南.md`
+- `../docs/桌面端完整功能验证清单.md`
