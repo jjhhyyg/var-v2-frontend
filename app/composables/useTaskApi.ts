@@ -64,6 +64,10 @@ export interface BatchImportResult {
   queuedTaskIds: string[]
 }
 
+export interface BatchDeleteResult {
+  deletedTaskIds: string[]
+}
+
 export interface DynamicMetric {
   frameNumber: number
   timestamp: number
@@ -202,6 +206,14 @@ export const useTaskApi = () => {
     return invokeCommand<string>('delete_task', { taskId })
   }
 
+  const deleteTasks = async (taskIds: string[]): Promise<BatchDeleteResult> => {
+    return invokeCommand<BatchDeleteResult>('delete_tasks', {
+      request: {
+        taskIds
+      }
+    })
+  }
+
   const getVideoStreamUrl = async (taskId: string, videoType: 'original' | 'preprocessed' | 'result'): Promise<string> => {
     return invokeCommand<string>('get_video_stream_url', {
       taskId,
@@ -230,6 +242,7 @@ export const useTaskApi = () => {
     reanalyzeTask,
     dequeueTask,
     deleteTask,
+    deleteTasks,
     getVideoStreamUrl,
     exportReportFile
   }

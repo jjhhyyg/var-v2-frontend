@@ -8,7 +8,7 @@ interface SelectedVideoItem {
   taskName: string
 }
 
-const { importVideoTasks, listTasks, startAnalysis, reanalyzeTask, dequeueTask, deleteTask, getTaskStatus } = useTaskApi()
+const { importVideoTasks, listTasks, startAnalysis, reanalyzeTask, dequeueTask, deleteTask, deleteTasks, getTaskStatus } = useTaskApi()
 const { connect, disconnect, subscribeToTaskUpdates } = useTauriEvents()
 const { pickVideoFiles, listenDragDrop } = useDesktopBridge()
 const { queueRecoveryState } = useDesktopState()
@@ -25,6 +25,7 @@ const selectedStatus = ref<string>()
 const sortBy = ref<TaskSortField>()
 const sortDirection = ref<TaskSortDirection>('desc')
 const selectedVideoItems = ref<SelectedVideoItem[]>([])
+const selectedTaskIds = ref<string[]>([])
 let unsubscribeUpdates: (() => void) | null = null
 let unsubscribeDragDrop: (() => void) | null = null
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
@@ -63,13 +64,24 @@ const pageSizeOptions = [
 
 const taskColumns = [
   {
+    id: 'select',
+    header: '',
+    enableSorting: false,
+    meta: {
+      class: {
+        th: 'w-auto',
+        td: 'w-auto align-middle'
+      }
+    }
+  },
+  {
     accessorKey: 'name',
     header: '任务',
     enableSorting: false,
     meta: {
       class: {
-        th: 'min-w-[220px]',
-        td: 'align-top'
+        th: 'w-auto',
+        td: 'w-auto align-top whitespace-normal'
       }
     }
   },
@@ -79,8 +91,8 @@ const taskColumns = [
     enableSorting: false,
     meta: {
       class: {
-        th: 'min-w-[220px]',
-        td: 'align-top'
+        th: 'w-auto',
+        td: 'w-auto align-top whitespace-normal'
       }
     }
   },
@@ -89,8 +101,8 @@ const taskColumns = [
     header: '创建时间',
     meta: {
       class: {
-        th: 'min-w-[180px]',
-        td: 'align-top'
+        th: 'w-auto',
+        td: 'w-auto align-top'
       }
     }
   },
@@ -99,8 +111,8 @@ const taskColumns = [
     header: '状态 / 进度',
     meta: {
       class: {
-        th: 'min-w-[220px]',
-        td: 'align-top'
+        th: 'w-auto',
+        td: 'w-auto align-top'
       }
     }
   },
@@ -109,8 +121,8 @@ const taskColumns = [
     header: '完成时间',
     meta: {
       class: {
-        th: 'min-w-[180px]',
-        td: 'align-top'
+        th: 'w-auto',
+        td: 'w-auto align-top'
       }
     }
   },
@@ -120,14 +132,54 @@ const taskColumns = [
     enableSorting: false,
     meta: {
       class: {
-        th: 'w-[160px] text-right',
-        td: 'align-top'
+        th: 'w-auto text-right',
+        td: 'w-auto align-top'
       }
     }
   }
 ]
 
 const hasPendingQueueRecovery = computed(() => queueRecoveryState.value.hasPendingRecovery)
+
+const currentPageSelectableTaskIds = computed(() => {
+  return tasks.value
+    .filter(task => !isProcessingStatus(task.status))
+    .map(task => task.taskId)
+})
+
+const selectedTaskCount = computed(() => selectedTaskIds.value.length)
+
+const allCurrentPageTasksSelected = computed(() => {
+  const ids = currentPageSelectableTaskIds.value
+  return ids.length > 0 && ids.every(taskId => selectedTaskIds.value.includes(taskId))
+})
+
+const someCurrentPageTasksSelected = computed(() => {
+  return currentPageSelectableTaskIds.value.some(taskId => selectedTaskIds.value.includes(taskId))
+})
+
+const toggleCurrentPageSelection = (checked: boolean | 'indeterminate') => {
+  const pageIds = currentPageSelectableTaskIds.value
+  if (checked) {
+    selectedTaskIds.value = Array.from(new Set([...selectedTaskIds.value, ...pageIds]))
+    return
+  }
+  selectedTaskIds.value = selectedTaskIds.value.filter(taskId => !pageIds.includes(taskId))
+}
+
+const toggleTaskSelection = (taskId: string, checked: boolean | 'indeterminate') => {
+  if (checked) {
+    if (!selectedTaskIds.value.includes(taskId)) {
+      selectedTaskIds.value = [...selectedTaskIds.value, taskId]
+    }
+    return
+  }
+  selectedTaskIds.value = selectedTaskIds.value.filter(id => id !== taskId)
+}
+
+const clearTaskSelection = () => {
+  selectedTaskIds.value = []
+}
 
 const paginationSummary = computed(() => {
   if (totalTasks.value === 0 || tasks.value.length === 0) {
@@ -367,6 +419,8 @@ const applyTaskPageResult = async (result: PageResult<Task>) => {
   tasks.value = result.items
   totalTasks.value = result.total
   totalPages.value = result.totalPages
+  const visibleTaskIds = new Set(tasks.value.map(task => task.taskId))
+  selectedTaskIds.value = selectedTaskIds.value.filter(taskId => visibleTaskIds.has(taskId))
   tasks.value.forEach((task) => {
     lastKnownTaskStatus[task.taskId] = task.status
   })
@@ -448,6 +502,8 @@ const handleStartAnalysis = async (taskId: string) => {
 
 const isDeleteModalOpen = ref(false)
 const taskToDelete = ref<string>('')
+const isBatchDeleteModalOpen = ref(false)
+const batchDeleting = ref(false)
 const isReanalyzeModalOpen = ref(false)
 const taskToReanalyze = ref<Task | null>(null)
 const reanalyzing = ref(false)
@@ -467,6 +523,41 @@ const handleDelete = async () => {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '删除失败'
     toast.add({ title: '删除失败', description: errorMessage, color: 'error' })
+  }
+}
+
+const confirmBatchDelete = () => {
+  if (selectedTaskIds.value.length === 0) {
+    return
+  }
+  isBatchDeleteModalOpen.value = true
+}
+
+const closeBatchDeleteModal = () => {
+  isBatchDeleteModalOpen.value = false
+}
+
+const handleBatchDelete = async () => {
+  if (selectedTaskIds.value.length === 0) {
+    return
+  }
+
+  batchDeleting.value = true
+  try {
+    const result = await deleteTasks(selectedTaskIds.value)
+    toast.add({
+      title: '批量删除成功',
+      description: `已删除 ${result.deletedTaskIds.length} 个任务`,
+      color: 'success'
+    })
+    clearTaskSelection()
+    closeBatchDeleteModal()
+    await loadTasks()
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : '批量删除失败'
+    toast.add({ title: '批量删除失败', description: errorMessage, color: 'error' })
+  } finally {
+    batchDeleting.value = false
   }
 }
 
@@ -657,83 +748,97 @@ const handlePageChange = (page: number) => {
       </template>
 
       <div class="space-y-6">
-        <UFileUpload
-          multiple
-          variant="area"
-          :interactive="false"
-          :dropzone="false"
-          :preview="false"
-        >
-          <template #default>
-            <div
-              role="button"
-              tabindex="0"
-              :class="[
-                'flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-6 py-10 text-center transition',
-                dragDropActive
-                  ? 'border-primary bg-primary/10 ring-2 ring-primary/30'
-                  : 'border-accented hover:border-primary hover:bg-primary/5'
-              ]"
-              @click="handlePickVideoFiles"
-              @keydown.enter.prevent="handlePickVideoFiles"
-              @keydown.space.prevent="handlePickVideoFiles"
-            >
-              <UIcon
-                name="i-lucide-files"
-                class="mb-4 h-10 w-10 text-primary"
-              />
-              <p class="text-base font-medium">
-                点击此区域选择多个视频文件，或直接拖拽到窗口中
-              </p>
-              <p class="mt-2 text-sm text-muted">
-                当前已选择 {{ selectedVideoItems.length }} 个视频，支持 mp4 / mov / avi / mkv
-              </p>
-              <p
-                v-if="dragDropActive"
-                class="mt-3 text-sm font-medium text-primary"
-              >
-                松开鼠标即可加入待创建列表
-              </p>
-            </div>
-          </template>
-        </UFileUpload>
-
         <div
-          v-if="selectedVideoItems.length > 0"
-          class="space-y-3"
+          :class="[
+            selectedVideoItems.length > 0
+              ? 'grid gap-5 lg:grid-cols-[minmax(280px,0.85fr)_minmax(420px,1.15fr)]'
+              : 'grid'
+          ]"
         >
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-medium">已选视频</h3>
-            <span class="text-xs text-muted">可逐项修改任务名</span>
-          </div>
-
-          <div class="space-y-3 rounded-lg border p-3">
-            <div
-              v-for="item in selectedVideoItems"
-              :key="item.filePath"
-              class="grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,1fr)_260px_auto]"
-            >
-              <div class="min-w-0 space-y-1">
-                <p class="truncate font-medium">
-                  {{ item.originalFilename }}
+          <UFileUpload
+            multiple
+            variant="area"
+            :interactive="false"
+            :dropzone="false"
+            :preview="false"
+          >
+            <template #default>
+              <div
+                role="button"
+                tabindex="0"
+                :class="[
+                  'flex h-full min-h-40 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-6 py-10 text-center transition',
+                  selectedVideoItems.length > 0 ? 'lg:min-h-[336px]' : '',
+                  dragDropActive
+                    ? 'border-primary bg-primary/10 ring-2 ring-primary/30'
+                    : 'border-accented hover:border-primary hover:bg-primary/5'
+                ]"
+                @click="handlePickVideoFiles"
+                @keydown.enter.prevent="handlePickVideoFiles"
+                @keydown.space.prevent="handlePickVideoFiles"
+              >
+                <UIcon
+                  name="i-lucide-files"
+                  class="mb-4 h-10 w-10 text-primary"
+                />
+                <p class="text-base font-medium">
+                  点击此区域选择多个视频文件，或直接拖拽到窗口中
                 </p>
-                <p class="truncate text-xs text-muted">
-                  {{ item.filePath }}
+                <p class="mt-2 text-sm text-muted">
+                  当前已选择 {{ selectedVideoItems.length }} 个视频，支持 mp4 / mov / avi / mkv
+                </p>
+                <p
+                  v-if="dragDropActive"
+                  class="mt-3 text-sm font-medium text-primary"
+                >
+                  松开鼠标即可加入待创建列表
                 </p>
               </div>
-              <UInput
-                v-model="item.taskName"
-                placeholder="任务名称"
-              />
-              <div class="flex justify-end">
-                <UButton
-                  color="error"
-                  variant="ghost"
-                  icon="i-lucide-trash-2"
-                  @click="removeSelectedVideo(item.filePath)"
-                >
-                  移除
-                </UButton>
+            </template>
+          </UFileUpload>
+
+          <div
+            v-if="selectedVideoItems.length > 0"
+            class="flex min-h-0 flex-col rounded-lg border border-accented/70 bg-default"
+          >
+            <div class="flex items-center justify-between border-b border-accented/70 px-4 py-3">
+              <div class="min-w-0">
+                <h3 class="text-sm font-semibold text-highlighted">待创建任务</h3>
+                <p class="text-xs text-muted">
+                  {{ selectedVideoItems.length }} 个视频，可逐项修改任务名
+                </p>
+              </div>
+            </div>
+
+            <div class="max-h-[288px] divide-y divide-accented/70 overflow-y-auto">
+              <div
+                v-for="item in selectedVideoItems"
+                :key="item.filePath"
+                class="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_220px_32px]"
+              >
+                <div class="min-w-0 space-y-1">
+                  <p class="truncate text-sm font-medium text-highlighted">
+                    {{ item.originalFilename }}
+                  </p>
+                  <p class="truncate text-xs text-muted">
+                    {{ item.filePath }}
+                  </p>
+                </div>
+                <UInput
+                  v-model="item.taskName"
+                  placeholder="任务名称"
+                  size="sm"
+                />
+                <div class="flex justify-end">
+                  <UButton
+                    color="error"
+                    variant="ghost"
+                    icon="i-lucide-trash-2"
+                    size="sm"
+                    title="移除"
+                    @click="removeSelectedVideo(item.filePath)"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -886,6 +991,15 @@ const handlePageChange = (page: number) => {
             <p class="text-sm text-muted">{{ paginationSummary }}</p>
           </div>
           <div class="flex flex-wrap items-center gap-3">
+            <UButton
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="outline"
+              :disabled="selectedTaskCount === 0"
+              @click="confirmBatchDelete"
+            >
+              批量删除{{ selectedTaskCount > 0 ? ` (${selectedTaskCount})` : '' }}
+            </UButton>
             <USelect
               v-model="pageSize"
               :items="pageSizeOptions"
@@ -908,10 +1022,30 @@ const handlePageChange = (page: number) => {
         :data="tasks"
         :columns="taskColumns"
         :loading="loading"
+        :ui="{ base: 'w-full table-auto' }"
         sticky="header"
         empty="暂无任务"
-        class="overflow-hidden rounded-lg border border-accented/60"
+        class="rounded-lg border border-accented/60"
       >
+        <template #select-header>
+          <UCheckbox
+            :model-value="allCurrentPageTasksSelected"
+            :indeterminate="someCurrentPageTasksSelected && !allCurrentPageTasksSelected"
+            :disabled="currentPageSelectableTaskIds.length === 0"
+            aria-label="选择当前页任务"
+            @update:model-value="toggleCurrentPageSelection"
+          />
+        </template>
+
+        <template #select-cell="{ row }">
+          <UCheckbox
+            :model-value="selectedTaskIds.includes(row.original.taskId)"
+            :disabled="isProcessingStatus(row.original.status)"
+            :aria-label="`选择任务 ${row.original.name}`"
+            @update:model-value="toggleTaskSelection(row.original.taskId, $event)"
+          />
+        </template>
+
         <template #createdAt-header>
           <UButton
             color="neutral"
@@ -952,22 +1086,27 @@ const handlePageChange = (page: number) => {
         </template>
 
         <template #name-cell="{ row }">
-          <div class="space-y-2">
+          <div class="min-w-0 space-y-2">
             <div class="space-y-1">
-              <p class="font-medium text-highlighted">
-                {{ row.original.name }}
-              </p>
+              <div class="flex min-w-0 items-start gap-1.5">
+                <UTooltip
+                  v-if="row.original.failureReason"
+                  :text="row.original.failureReason"
+                >
+                  <UIcon
+                    name="i-lucide-circle-alert"
+                    class="mt-0.5 h-4 w-4 shrink-0 text-error"
+                  />
+                </UTooltip>
+                <p class="min-w-0 truncate font-medium text-highlighted">
+                  {{ row.original.name }}
+                </p>
+              </div>
               <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span>ID {{ row.original.taskId }}</span>
                 <span>视频时长 {{ formatDuration(row.original.videoDuration) }}</span>
               </div>
             </div>
-            <p
-              v-if="row.original.failureReason"
-              class="line-clamp-2 text-xs text-error"
-            >
-              失败原因：{{ row.original.failureReason }}
-            </p>
           </div>
         </template>
 
@@ -1018,7 +1157,7 @@ const handlePageChange = (page: number) => {
         </template>
 
         <template #status-cell="{ row }">
-          <div class="space-y-2">
+          <div class="w-full max-w-full min-w-0 space-y-2">
             <div class="flex flex-wrap items-center gap-2">
               <UBadge :color="getStatusColor(row.original.status)">
                 {{ getStatusText(row.original.status) }}
@@ -1034,7 +1173,7 @@ const handlePageChange = (page: number) => {
             </div>
             <div
               v-if="(row.original.status === 'PREPROCESSING' || row.original.status === 'ANALYZING') && taskStatusMap[row.original.taskId]"
-              class="space-y-1"
+              class="w-full min-w-0 space-y-1"
             >
               <div class="flex items-center justify-between text-xs text-muted">
                 <span>{{ getProcessingStatusText(row.original.status) }}</span>
@@ -1045,6 +1184,7 @@ const handlePageChange = (page: number) => {
                 :max="100"
                 :color="row.original.status === 'PREPROCESSING' ? 'info' : 'primary'"
                 size="sm"
+                class="w-full"
               />
             </div>
           </div>
@@ -1057,7 +1197,7 @@ const handlePageChange = (page: number) => {
         </template>
 
         <template #actions-cell="{ row }">
-          <div class="flex justify-end gap-2">
+          <div class="ml-auto flex min-w-[112px] justify-end gap-1">
             <UButton
               v-if="row.original.status === 'PENDING'"
               icon="i-lucide-list-plus"
@@ -1078,7 +1218,7 @@ const handlePageChange = (page: number) => {
             />
             <UButton
               v-if="row.original.status === 'QUEUED'"
-              icon="i-lucide-rotate-ccw"
+              icon="i-lucide-list-x"
               color="warning"
               variant="ghost"
               size="sm"
@@ -1178,6 +1318,34 @@ const handlePageChange = (page: number) => {
               @click="handleDelete"
             >
               删除
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isBatchDeleteModalOpen">
+      <template #content>
+        <div class="p-6">
+          <h3 class="mb-4 text-lg font-semibold">确认批量删除任务</h3>
+          <p class="mb-6 text-muted">
+            确定要删除已选中的 {{ selectedTaskCount }} 个任务吗？此操作不可撤销。
+          </p>
+          <div class="flex justify-end gap-2">
+            <UButton
+              color="neutral"
+              variant="outline"
+              :disabled="batchDeleting"
+              @click="closeBatchDeleteModal"
+            >
+              取消
+            </UButton>
+            <UButton
+              color="error"
+              :loading="batchDeleting"
+              @click="handleBatchDelete"
+            >
+              批量删除
             </UButton>
           </div>
         </div>
