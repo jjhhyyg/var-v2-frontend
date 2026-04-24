@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.md)
 
-> 当前前端以 macOS Tauri 桌面端为主，不再依赖旧的 Spring Boot 后端、WebSocket 服务或 Docker/Nginx 部署链路。
+> 当前前端以 macOS Tauri 桌面端为主，运行时通信使用 Tauri command 和 Tauri event。
 
 ## 模块职责
 
@@ -36,7 +36,7 @@ npm run desktop:macos:release-public
 - `app/pages/tasks/[id].vue`：任务详情、视频预览、分析结果
 - `app/app.vue`：全局 Header、应用设置、重启恢复、关闭确认
 - `app/composables/useTaskApi.ts`：Tauri command API 封装
-- `app/composables/useWebSocket.ts`：Tauri 事件订阅封装，名称保留但已不是 WebSocket
+- `app/composables/useTauriEvents.ts`：Tauri 任务状态和详情事件订阅封装
 - `src-tauri/src/lib.rs`：桌面端数据库、队列调度、worker 管理、文件管理
 - `scripts/macos-release.mjs`：macOS 发布编排
 

@@ -9,7 +9,7 @@ interface SelectedVideoItem {
 }
 
 const { importVideoTasks, listTasks, startAnalysis, reanalyzeTask, dequeueTask, deleteTask, getTaskStatus } = useTaskApi()
-const { connect, disconnect, subscribeToTaskUpdates } = useWebSocket()
+const { connect, disconnect, subscribeToTaskUpdates } = useTauriEvents()
 const { pickVideoFiles, listenDragDrop } = useDesktopBridge()
 const { queueRecoveryState } = useDesktopState()
 const toast = useToast()
@@ -595,7 +595,7 @@ onMounted(async () => {
     await connect()
     unsubscribeUpdates = subscribeToTaskUpdates(handleTaskUpdate)
   } catch (error) {
-    console.error('WebSocket连接失败:', error)
+    console.error('Tauri 事件订阅初始化失败:', error)
   }
 
   try {

@@ -29,7 +29,6 @@
     "@iconify-json/simple-icons": "^1.2.53",
     "@nuxt/icon": "^2.0.0",
     "@nuxt/ui": "^4.6.1",
-    "@stomp/stompjs": "^7.2.0",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-fs": "^2.5.0",
@@ -39,14 +38,12 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.3",
     "nuxt": "^4.4.2",
-    "sockjs-client": "^1.6.1",
     "vue-echarts": "^8.0.0"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.9.0",
     "@tauri-apps/cli": "^2.10.1",
     "@types/node": "^24.7.2",
-    "@types/sockjs-client": "^1.5.4",
     "eslint": "^9.36.0",
     "typescript": "^5.9.2",
     "vue-tsc": "^3.1.0"

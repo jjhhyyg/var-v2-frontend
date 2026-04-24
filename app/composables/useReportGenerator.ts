@@ -641,7 +641,7 @@ export function useReportGenerator() {
   /**
    * 获取图片的真实尺寸
    */
-  const getImageDimensions = (base64: string): Promise<{ width: number; height: number }> => {
+  const getImageDimensions = (base64: string): Promise<{ width: number, height: number }> => {
     return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = () => {

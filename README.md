@@ -2,7 +2,7 @@
 
 [简体中文](README.zh.md) | English
 
-> The current frontend targets the macOS Tauri desktop app. It no longer depends on the legacy Spring Boot backend, WebSocket service, Docker, or Nginx deployment path.
+> The current frontend targets the macOS Tauri desktop app. Runtime communication uses Tauri commands and Tauri events.
 
 ## Responsibilities
 
@@ -36,7 +36,7 @@ Do not mix `tauri dev`, raw `tauri build`, and the formal macOS release scripts.
 - `app/pages/tasks/[id].vue`: task details, video preview, analysis results
 - `app/app.vue`: global header, app settings, restart recovery, close confirmation
 - `app/composables/useTaskApi.ts`: Tauri command API wrapper
-- `app/composables/useWebSocket.ts`: Tauri event subscription wrapper; the name is retained but it is no longer WebSocket
+- `app/composables/useTauriEvents.ts`: Tauri event subscription wrapper for task status and detail updates
 - `src-tauri/src/lib.rs`: desktop database, queue scheduler, worker management, file management
 - `scripts/macos-release.mjs`: macOS release orchestration
 

@@ -179,7 +179,7 @@ function ensureNoBackportPathlib(python) {
     python,
     [
       '-c',
-      "import sys, glob, os; matches=[]; [matches.extend(glob.glob(os.path.join(path, 'pathlib.py'))) for path in sys.path if 'site-packages' in path]; print(matches[0] if matches else '')"
+      'import sys, glob, os; matches=[]; [matches.extend(glob.glob(os.path.join(path, "pathlib.py"))) for path in sys.path if "site-packages" in path]; print(matches[0] if matches else "")'
     ],
     {
       encoding: 'utf-8'

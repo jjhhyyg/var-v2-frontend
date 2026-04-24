@@ -11,6 +11,18 @@ export default withNuxt({
     'vue/html-self-closing': 'off',
     '@stylistic/operator-linebreak': 'off',
     'vue/operator-linebreak': 'off'
-  },
-  ignores: ['**/node_modules/**', '**/.nuxt/**', '**/dist/**', '**/.output/**', '**/coverage/**']
+  }
+}).prepend({
+  ignores: [
+    '**/node_modules/**',
+    '**/.nuxt/**',
+    '**/dist/**',
+    '**/.output/**',
+    '**/coverage/**',
+    '**/src-tauri/target/**',
+    '**/src-tauri/resources/runtime/**',
+    '**/src-tauri/resources/models/**',
+    '**/.tauri-worker-build/**',
+    '**/.desktop-worker-venv/**'
+  ]
 })

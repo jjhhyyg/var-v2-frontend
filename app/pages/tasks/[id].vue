@@ -19,7 +19,7 @@ interface Bounds {
 
 const route = useRoute()
 const { getTask, getTaskStatus, getTaskResult, reanalyzeTask } = useTaskApi()
-const { connect, disconnect, subscribeToTask, subscribeToTaskDetailUpdate } = useWebSocket()
+const { connect, disconnect, subscribeToTask, subscribeToTaskDetailUpdate } = useTauriEvents()
 const toast = useToast()
 
 const taskId = route.params.id as string
@@ -531,7 +531,7 @@ const loadResult = async () => {
   }
 }
 
-// WebSocket状态更新回调
+// Tauri 任务状态更新回调
 const handleStatusUpdate = async (newStatus: TaskStatus) => {
   console.log('收到任务状态更新:', newStatus)
   status.value = newStatus
@@ -639,7 +639,7 @@ onMounted(async () => {
   // 注意：loadStatus内部已经会在任务完成时调用loadResult()
   // 所以这里不需要再次调用，避免重复请求
 
-  // 连接WebSocket并订阅任务状态更新
+  // 订阅 Tauri 任务状态更新
   try {
     await connect()
     unsubscribe = subscribeToTask(taskId, handleStatusUpdate)
@@ -655,9 +655,9 @@ onMounted(async () => {
     })
     console.log('已订阅任务详情更新')
   } catch (error) {
-    console.error('WebSocket连接失败:', error)
+    console.error('Tauri 事件订阅初始化失败:', error)
     toast.add({
-      title: 'WebSocket连接失败',
+      title: '实时事件订阅失败',
       description: '将无法实时更新任务状态',
       color: 'warning'
     })

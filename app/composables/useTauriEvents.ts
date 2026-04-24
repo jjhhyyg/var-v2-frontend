@@ -1,5 +1,5 @@
 /**
- * 桌面事件总线封装
+ * Tauri 桌面事件订阅封装
  */
 
 import type { Task, TaskStatus } from './useTaskApi'
@@ -16,7 +16,7 @@ type Unsubscribe = () => void
 
 const activeUnsubscribers = new Set<Unsubscribe>()
 
-export const useWebSocket = () => {
+export const useTauriEvents = () => {
   const { listenEvent } = useDesktopBridge()
   const isConnected = ref(false)
 

@@ -92,7 +92,7 @@ function listDeveloperIdIdentities() {
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(line => line.includes('Developer ID Application:'))
-    .map(line => {
+    .map((line) => {
       const match = line.match(/"(.+?)"/)
       return match?.[1] ?? ''
     })
@@ -228,7 +228,7 @@ function isExecutableMode(path) {
 
 function collectCodeTargets(root) {
   return collectFiles(root)
-    .filter(path => {
+    .filter((path) => {
       const name = basename(path)
       const relativePath = relative(root, path)
       const segments = relativePath.split('/')

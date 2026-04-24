@@ -10,17 +10,6 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  runtimeConfig: {
-    public: {
-      // 使用环境变量配置API基础URL
-      // 开发环境: NUXT_PUBLIC_API_BASE=http://localhost:8080
-      // 生产环境: NUXT_PUBLIC_API_BASE="" (空字符串，使用nginx反向代理)
-      apiBase: process.env.NUXT_PUBLIC_API_BASE !== undefined
-        ? process.env.NUXT_PUBLIC_API_BASE
-        : 'http://localhost:8080'
-    }
-  },
-
   build: {
     transpile: ['echarts', 'vue-echarts']
   },
