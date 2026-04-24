@@ -6,8 +6,6 @@ const props = defineProps<{
   result: TaskResult
 }>()
 
-const { calculateAverage } = useReportGenerator()
-
 // 从任务配置获取视频帧率，默认25
 const fps = computed(() => {
   return props.task.config?.frameRate ?? 25
@@ -39,15 +37,15 @@ const formatDuration = (seconds: number): string => {
 
 // 计算各项平均值
 const avgBrightness = computed(() => {
-  return calculateAverage(props.result.dynamicMetrics.map(m => m.brightness || 0))
+  return calculateReportAverage(props.result.dynamicMetrics.map(m => m.brightness || 0))
 })
 
 const avgArea = computed(() => {
-  return calculateAverage(props.result.dynamicMetrics.map(m => m.poolArea || 0))
+  return calculateReportAverage(props.result.dynamicMetrics.map(m => m.poolArea || 0))
 })
 
 const avgPerimeter = computed(() => {
-  return calculateAverage(props.result.dynamicMetrics.map(m => m.poolPerimeter || 0))
+  return calculateReportAverage(props.result.dynamicMetrics.map(m => m.poolPerimeter || 0))
 })
 
 // 计算趋势
@@ -57,8 +55,8 @@ const calculateTrend = (values: number[]): string => {
   const firstHalf = values.slice(0, Math.floor(values.length / 2))
   const secondHalf = values.slice(Math.floor(values.length / 2))
 
-  const avgFirst = calculateAverage(firstHalf)
-  const avgSecond = calculateAverage(secondHalf)
+  const avgFirst = calculateReportAverage(firstHalf)
+  const avgSecond = calculateReportAverage(secondHalf)
 
   const diff = avgSecond - avgFirst
   const changePercent = (diff / avgFirst) * 100

@@ -3,7 +3,6 @@
  * 支持将任务分析结果导出为 HTML 和 PDF 格式
  * 直接生成静态HTML，使用echarts的getDataURL方法导出图表
  */
-import jsPDF from 'jspdf'
 import * as echarts from 'echarts/core'
 import type { Task, TaskResult } from './useTaskApi'
 import { loadChineseFontFromFile, CHINESE_FONT_CONFIG } from '~/utils/chineseFont'
@@ -25,18 +24,15 @@ const eventTypeMap: Record<string, string> = {
   CREEPING_ARC: '爬弧'
 }
 
+export const calculateReportAverage = (values: number[]): number => {
+  if (values.length === 0) return 0
+  const sum = values.reduce((acc, val) => acc + val, 0)
+  return sum / values.length
+}
+
 export function useReportGenerator() {
   const { pickSavePath } = useDesktopBridge()
   const { exportReportFile } = useTaskApi()
-
-  /**
-   * 计算平均值（与ReportPreview.vue保持一致）
-   */
-  const calculateAverage = (values: number[]): number => {
-    if (values.length === 0) return 0
-    const sum = values.reduce((acc, val) => acc + val, 0)
-    return sum / values.length
-  }
 
   /**
    * 计算趋势（与ReportPreview.vue保持一致）
@@ -47,8 +43,8 @@ export function useReportGenerator() {
     const firstHalf = values.slice(0, Math.floor(values.length / 2))
     const secondHalf = values.slice(Math.floor(values.length / 2))
 
-    const avgFirst = calculateAverage(firstHalf)
-    const avgSecond = calculateAverage(secondHalf)
+    const avgFirst = calculateReportAverage(firstHalf)
+    const avgSecond = calculateReportAverage(secondHalf)
 
     const diff = avgSecond - avgFirst
     const changePercent = (diff / avgFirst) * 100
@@ -191,9 +187,9 @@ export function useReportGenerator() {
       const areaValues = data.result.dynamicMetrics.map(m => m.poolArea || 0)
       const perimeterValues = data.result.dynamicMetrics.map(m => m.poolPerimeter || 0)
 
-      const avgBrightness = calculateAverage(brightnessValues)
-      const avgArea = calculateAverage(areaValues)
-      const avgPerimeter = calculateAverage(perimeterValues)
+      const avgBrightness = calculateReportAverage(brightnessValues)
+      const avgArea = calculateReportAverage(areaValues)
+      const avgPerimeter = calculateReportAverage(perimeterValues)
 
       const brightnessTrend = calculateTrend(brightnessValues)
       const areaTrend = calculateTrend(areaValues)
@@ -615,7 +611,7 @@ export function useReportGenerator() {
   /**
    * 加载中文字体到 jsPDF
    */
-  const loadChineseFont = async (pdf: jsPDF): Promise<boolean> => {
+  const loadChineseFont = async (pdf: import('jspdf').jsPDF): Promise<boolean> => {
     try {
       // 尝试从 public 目录加载字体文件
       const fontBase64 = await loadChineseFontFromFile(CHINESE_FONT_CONFIG.fontPath)
@@ -658,6 +654,8 @@ export function useReportGenerator() {
    */
   const exportToPDF = async (data: ReportData) => {
     try {
+      const { jsPDF } = await import('jspdf')
+
       // 等待图表渲染完成
       await waitForChartsReady()
 
@@ -673,9 +671,9 @@ export function useReportGenerator() {
       const areaValues = data.result.dynamicMetrics.map(m => m.poolArea || 0)
       const perimeterValues = data.result.dynamicMetrics.map(m => m.poolPerimeter || 0)
 
-      const avgBrightness = calculateAverage(brightnessValues)
-      const avgArea = calculateAverage(areaValues)
-      const avgPerimeter = calculateAverage(perimeterValues)
+      const avgBrightness = calculateReportAverage(brightnessValues)
+      const avgArea = calculateReportAverage(areaValues)
+      const avgPerimeter = calculateReportAverage(perimeterValues)
 
       const brightnessTrend = calculateTrend(brightnessValues)
       const areaTrend = calculateTrend(areaValues)
@@ -910,7 +908,7 @@ export function useReportGenerator() {
   }
 
   return {
-    calculateAverage,
+    calculateAverage: calculateReportAverage,
     exportToHTML,
     exportToPDF
   }

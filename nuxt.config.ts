@@ -14,6 +14,12 @@ export default defineNuxtConfig({
     transpile: ['echarts', 'vue-echarts']
   },
 
+  vite: {
+    optimizeDeps: {
+      include: ['jspdf']
+    }
+  },
+
   // routeRules: {
   //   '/': { ssr: false },
   //   '/tasks/**': { ssr: false }
