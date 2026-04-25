@@ -60,9 +60,7 @@ const uploadForm = reactive({
   timeoutRatioDenominator: 4,
   enablePreprocessing: false,
   preprocessingStrength: 'moderate',
-  preprocessingEnhancePool: false,
-  enableTrackingMerge: false,
-  trackingMergeStrategy: 'auto'
+  preprocessingEnhancePool: false
 })
 
 const statusOptions = [
@@ -402,9 +400,7 @@ const handleCreateTasks = async (autoStart: boolean) => {
         timeoutRatio,
         enablePreprocessing: uploadForm.enablePreprocessing,
         preprocessingStrength: uploadForm.preprocessingStrength,
-        preprocessingEnhancePool: uploadForm.preprocessingEnhancePool,
-        enableTrackingMerge: uploadForm.enableTrackingMerge,
-        trackingMergeStrategy: uploadForm.trackingMergeStrategy
+        preprocessingEnhancePool: uploadForm.preprocessingEnhancePool
       },
       autoStart
     )
@@ -993,7 +989,7 @@ const handlePageChange = (page: number) => {
           <section class="space-y-4 rounded-xl border border-accented/70 bg-muted/20 p-4">
             <div class="space-y-1">
               <h3 class="text-sm font-semibold text-highlighted">基础参数</h3>
-              <p class="text-xs text-muted">控制超时阈值和追踪后处理策略。</p>
+              <p class="text-xs text-muted">控制任务超时阈值。</p>
             </div>
 
             <div class="space-y-4">
@@ -1014,34 +1010,6 @@ const handlePageChange = (page: number) => {
                     min="1"
                     step="1"
                     inputmode="numeric"
-                  />
-                </div>
-              </div>
-
-              <div class="space-y-3 rounded-lg border border-accented/60 bg-default/80 p-3">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="space-y-1">
-                    <label class="block text-sm font-medium">追踪轨迹合并</label>
-                    <p class="text-xs text-muted">统一应用到本批任务，减少物体 ID 断裂。</p>
-                  </div>
-                  <UCheckbox v-model="uploadForm.enableTrackingMerge" />
-                </div>
-
-                <div
-                  v-if="uploadForm.enableTrackingMerge"
-                  class="space-y-2"
-                >
-                  <label class="block text-sm font-medium">合并策略</label>
-                  <USelect
-                    v-model="uploadForm.trackingMergeStrategy"
-                    :items="[
-                      { label: '自动识别 (推荐)', value: 'auto' },
-                      { label: '粘连物专用', value: 'adhesion' },
-                      { label: '锭冠专用', value: 'ingot_crown' },
-                      { label: '保守模式', value: 'conservative' },
-                      { label: '激进模式', value: 'aggressive' }
-                    ]"
-                    value-key="value"
                   />
                 </div>
               </div>
@@ -1284,13 +1252,6 @@ const handlePageChange = (page: number) => {
               size="xs"
             >
               熔池增强
-            </UBadge>
-            <UBadge
-              v-if="row.original.config?.enableTrackingMerge"
-              color="warning"
-              size="xs"
-            >
-              轨迹合并:{{ row.original.config.trackingMergeStrategy }}
             </UBadge>
           </div>
         </template>

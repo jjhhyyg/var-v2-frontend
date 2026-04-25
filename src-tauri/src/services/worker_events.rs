@@ -60,6 +60,9 @@ pub(crate) fn handle_worker_event(
                 "UPDATE analysis_tasks SET result_video_rel_path = ?1 WHERE id = ?2",
                 params![rel_path, task_id],
             )?;
+            let response = final_status_response(state, task_id)?;
+            state.runtime.progress.write().remove(&task_id);
+            state.emit_status(app, &response);
             state.emit_detail(app, task_id);
             Ok(false)
         }

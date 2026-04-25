@@ -16,11 +16,10 @@ export interface ReportData {
 // 事件类型映射（与ReportPreview.vue保持一致）
 const eventTypeMap: Record<string, string> = {
   POOL_NOT_REACHED: '熔池未到边',
-  ADHESION_FORMED: '电极形成粘连物',
-  ADHESION_DROPPED: '电极粘连物脱落',
-  CROWN_DROPPED: '锭冠脱落',
+  ADHESION: '电极粘连物',
+  CROWN: '锭冠',
   GLOW: '辉光',
-  SIDE_ARC: '边弧',
+  SIDE_ARC: '边弧（侧弧）',
   CREEPING_ARC: '爬弧'
 }
 
@@ -199,7 +198,7 @@ export function useReportGenerator() {
       const groupedEvents = data.result.anomalyEvents.map((event) => {
         const startTime = formatFrameToTime(event.startFrame, data.fps)
         const endTime = formatFrameToTime(event.endFrame, data.fps)
-        const durationFrames = event.endFrame - event.startFrame
+        const durationFrames = event.endFrame - event.startFrame + 1
         const durationSeconds = durationFrames / data.fps
         const duration = durationSeconds.toFixed(1) + '秒'
 
@@ -559,12 +558,7 @@ export function useReportGenerator() {
                   <td class="text-muted">${event.endTime}</td>
                   <td class="text-muted">${event.duration}</td>
                   <td class="text-muted">
-                    ${event.eventType === '电极粘连物脱落' && event.metadata
-                        ? (event.metadata.droppedIntoPool
-                            ? '<span class="text-red-600">⚠️ 掉落进熔池</span>'
-                            : '<span class="text-green-600">✓ 被结晶器捕获</span>')
-                        : (event.metadata ? JSON.stringify(event.metadata) : '-')
-                    }
+                    ${event.metadata ? JSON.stringify(event.metadata) : '-'}
                   </td>
                 </tr>
               `).join('')}
@@ -776,15 +770,13 @@ export function useReportGenerator() {
       const groupedEvents = data.result.anomalyEvents.map((event) => {
         const startTime = formatFrameToTime(event.startFrame, data.fps)
         const endTime = formatFrameToTime(event.endFrame, data.fps)
-        const durationFrames = event.endFrame - event.startFrame
+        const durationFrames = event.endFrame - event.startFrame + 1
         const durationSeconds = durationFrames / data.fps
         const duration = durationSeconds.toFixed(1) + '秒'
 
         // 格式化详细信息
         let details = '-'
-        if (event.eventType === 'ADHESION_DROPPED' && event.metadata) {
-          details = event.metadata.droppedIntoPool ? '⚠️ 掉落进熔池' : '✓ 被结晶器捕获'
-        } else if (event.metadata) {
+        if (event.metadata) {
           details = JSON.stringify(event.metadata)
         }
 

@@ -138,7 +138,7 @@ pub(crate) fn load_task_config(
 ) -> anyhow::Result<Option<TaskConfigData>> {
     let mut stmt = conn.prepare(
         "SELECT timeout_ratio, model_version, enable_preprocessing, preprocessing_strength,
-                preprocessing_enhance_pool, enable_tracking_merge, tracking_merge_strategy, frame_rate
+                preprocessing_enhance_pool, frame_rate
            FROM task_configs WHERE task_id = ?1",
     )?;
 
@@ -150,9 +150,7 @@ pub(crate) fn load_task_config(
                 enable_preprocessing: row.get::<_, i64>(2)? != 0,
                 preprocessing_strength: row.get(3)?,
                 preprocessing_enhance_pool: row.get::<_, i64>(4)? != 0,
-                enable_tracking_merge: row.get::<_, i64>(5)? != 0,
-                tracking_merge_strategy: row.get(6)?,
-                frame_rate: row.get(7)?,
+                frame_rate: row.get(5)?,
             })
         })
         .optional()?;
@@ -290,17 +288,14 @@ pub(crate) fn reset_task_for_reanalysis(conn: &Connection, task_id: i64) -> anyh
         params![task_id],
     )?;
     conn.execute(
-        "DELETE FROM tracking_objects WHERE task_id = ?1",
-        params![task_id],
-    )?;
-    conn.execute(
         "UPDATE analysis_tasks
          SET status = 'PENDING',
              is_timeout = 0,
+             video_info_json = NULL,
+             performance_json = NULL,
              global_analysis_json = NULL,
              result_video_rel_path = NULL,
              preprocessed_video_rel_path = NULL,
-             tracking_rel_path = NULL,
              queue_order = NULL,
              started_at = NULL,
              preprocessing_completed_at = NULL,

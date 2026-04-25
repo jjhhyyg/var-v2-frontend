@@ -15,10 +15,6 @@ pub(crate) fn persist_result_payload(
         "DELETE FROM anomaly_events WHERE task_id = ?1",
         params![task_id],
     )?;
-    tx.execute(
-        "DELETE FROM tracking_objects WHERE task_id = ?1",
-        params![task_id],
-    )?;
 
     tx.execute(
         "UPDATE analysis_tasks
@@ -26,20 +22,30 @@ pub(crate) fn persist_result_payload(
              is_timeout = ?2,
              completed_at = ?3,
              failure_reason = ?4,
-             global_analysis_json = ?5,
-             tracking_rel_path = COALESCE(tracking_rel_path, ?6),
+             video_info_json = ?5,
+             performance_json = ?6,
+             global_analysis_json = ?7,
              queue_order = NULL
-         WHERE id = ?7",
+         WHERE id = ?8",
         params![
             payload.status,
             payload.is_timeout.unwrap_or(false) as i64,
             now_string(),
             payload.failure_reason.clone(),
             payload
+                .video_info
+                .as_ref()
+                .map(|value| serde_json::to_string(value))
+                .transpose()?,
+            payload
+                .performance
+                .as_ref()
+                .map(|value| serde_json::to_string(value))
+                .transpose()?,
+            payload
                 .global_analysis
                 .as_ref()
                 .map(|value| value.to_string()),
-            "output/tracking.json",
             task_id
         ],
     )?;
@@ -64,32 +70,16 @@ pub(crate) fn persist_result_payload(
     if let Some(events) = &payload.anomaly_events {
         for event in events {
             tx.execute(
-                "INSERT INTO anomaly_events (task_id, event_type, start_frame, end_frame, object_id, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO anomaly_events (task_id, event_type, start_frame, end_frame, start_time, end_time, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     task_id,
                     event.event_type,
                     event.start_frame,
                     event.end_frame,
-                    event.object_id,
+                    event.start_time,
+                    event.end_time,
                     event.metadata.as_ref().map(|value| value.to_string())
-                ],
-            )?;
-        }
-    }
-
-    if let Some(objects) = &payload.tracking_objects {
-        for object in objects {
-            tx.execute(
-                "INSERT INTO tracking_objects (task_id, object_id, category, first_frame, last_frame, trajectory_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    task_id,
-                    object.object_id,
-                    object.category,
-                    object.first_frame,
-                    object.last_frame,
-                    object.trajectory.as_ref().map(|value| value.to_string())
                 ],
             )?;
         }
@@ -127,39 +117,19 @@ pub(crate) fn load_task_result(
 
     let anomaly_events = {
         let mut stmt = conn.prepare(
-            "SELECT id, event_type, start_frame, end_frame, object_id, metadata_json
-               FROM anomaly_events WHERE task_id = ?1 ORDER BY start_frame ASC",
+            "SELECT id, event_type, start_frame, end_frame, start_time, end_time, metadata_json
+               FROM anomaly_events WHERE task_id = ?1 ORDER BY start_frame ASC, event_type ASC",
         )?;
         let rows = stmt.query_map(params![task_id], |row| {
-            let metadata_raw: Option<String> = row.get(5)?;
+            let metadata_raw: Option<String> = row.get(6)?;
             Ok(AnomalyEventData {
                 event_id: row.get::<_, i64>(0)?.to_string(),
                 event_type: row.get(1)?,
                 start_frame: row.get(2)?,
                 end_frame: row.get(3)?,
-                object_id: row.get(4)?,
+                start_time: row.get(4)?,
+                end_time: row.get(5)?,
                 metadata: metadata_raw
-                    .as_deref()
-                    .and_then(|value| serde_json::from_str(value).ok()),
-            })
-        })?;
-        rows.collect::<Result<Vec<_>, _>>()?
-    };
-
-    let tracking_objects = {
-        let mut stmt = conn.prepare(
-            "SELECT id, object_id, category, first_frame, last_frame, trajectory_json
-               FROM tracking_objects WHERE task_id = ?1 ORDER BY first_frame ASC",
-        )?;
-        let rows = stmt.query_map(params![task_id], |row| {
-            let trajectory_raw: Option<String> = row.get(5)?;
-            Ok(TrackingObjectData {
-                tracking_id: row.get::<_, i64>(0)?.to_string(),
-                object_id: row.get(1)?,
-                category: row.get(2)?,
-                first_frame: row.get(3)?,
-                last_frame: row.get(4)?,
-                trajectory: trajectory_raw
                     .as_deref()
                     .and_then(|value| serde_json::from_str(value).ok()),
             })
@@ -171,20 +141,33 @@ pub(crate) fn load_task_result(
         *acc.entry(item.event_type.clone()).or_insert(0) += 1;
         acc
     });
-    let object_statistics = tracking_objects
-        .iter()
-        .fold(HashMap::new(), |mut acc, item| {
-            *acc.entry(item.category.clone()).or_insert(0) += 1;
-            acc
-        });
 
-    let global_analysis = {
-        let raw: Option<String> = conn.query_row(
-            "SELECT global_analysis_json FROM analysis_tasks WHERE id = ?1",
+    let (video_info, performance, global_analysis) = {
+        let row = conn.query_row(
+            "SELECT video_info_json, performance_json, global_analysis_json
+               FROM analysis_tasks WHERE id = ?1",
             params![task_id],
-            |row| row.get(0),
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
         )?;
-        raw.and_then(|value| serde_json::from_str(&value).ok())
+        (
+            row.0
+                .as_deref()
+                .and_then(|value| serde_json::from_str(value).ok())
+                .unwrap_or_default(),
+            row.1
+                .as_deref()
+                .and_then(|value| serde_json::from_str(value).ok())
+                .unwrap_or_default(),
+            row.2
+                .as_deref()
+                .and_then(|value| serde_json::from_str(value).ok()),
+        )
     };
 
     Ok(TaskResultResponse {
@@ -192,11 +175,11 @@ pub(crate) fn load_task_result(
         name: task.name,
         status: task.status,
         is_timeout: task.is_timeout,
+        video_info,
+        performance,
         dynamic_metrics,
         global_analysis,
         anomaly_events,
-        tracking_objects,
         event_statistics,
-        object_statistics,
     })
 }

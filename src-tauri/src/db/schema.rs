@@ -13,6 +13,21 @@ pub(crate) fn init_db(db_path: &Path, backup_dir: &Path) -> anyhow::Result<()> {
     let conn = open_db(db_path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
+    let user_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if user_version < 3 {
+        conn.execute_batch(
+            r#"
+            BEGIN;
+            DROP TABLE IF EXISTS tracking_objects;
+            DROP TABLE IF EXISTS anomaly_events;
+            DROP TABLE IF EXISTS dynamic_metrics;
+            DROP TABLE IF EXISTS task_configs;
+            DROP TABLE IF EXISTS analysis_tasks;
+            COMMIT;
+            "#,
+        )?;
+    }
+
     conn.execute_batch(
         r#"
         BEGIN;
@@ -24,11 +39,12 @@ pub(crate) fn init_db(db_path: &Path, backup_dir: &Path) -> anyhow::Result<()> {
           analysis_input_rel_path TEXT,
           result_video_rel_path TEXT,
           preprocessed_video_rel_path TEXT,
-          tracking_rel_path TEXT,
           video_duration INTEGER NOT NULL,
           status TEXT NOT NULL,
           timeout_threshold INTEGER NOT NULL,
           is_timeout INTEGER NOT NULL DEFAULT 0,
+          video_info_json TEXT,
+          performance_json TEXT,
           global_analysis_json TEXT,
           created_at TEXT NOT NULL,
           started_at TEXT,
@@ -45,8 +61,6 @@ pub(crate) fn init_db(db_path: &Path, backup_dir: &Path) -> anyhow::Result<()> {
           enable_preprocessing INTEGER NOT NULL,
           preprocessing_strength TEXT NOT NULL,
           preprocessing_enhance_pool INTEGER NOT NULL,
-          enable_tracking_merge INTEGER NOT NULL,
-          tracking_merge_strategy TEXT NOT NULL,
           frame_rate REAL NOT NULL,
           FOREIGN KEY(task_id) REFERENCES analysis_tasks(id) ON DELETE CASCADE
         );
@@ -66,25 +80,16 @@ pub(crate) fn init_db(db_path: &Path, backup_dir: &Path) -> anyhow::Result<()> {
           event_type TEXT NOT NULL,
           start_frame INTEGER NOT NULL,
           end_frame INTEGER NOT NULL,
-          object_id INTEGER,
+          start_time REAL,
+          end_time REAL,
           metadata_json TEXT,
-          FOREIGN KEY(task_id) REFERENCES analysis_tasks(id) ON DELETE CASCADE
-        );
-        CREATE TABLE IF NOT EXISTS tracking_objects (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          task_id INTEGER NOT NULL,
-          object_id INTEGER NOT NULL,
-          category TEXT NOT NULL,
-          first_frame INTEGER NOT NULL,
-          last_frame INTEGER NOT NULL,
-          trajectory_json TEXT,
           FOREIGN KEY(task_id) REFERENCES analysis_tasks(id) ON DELETE CASCADE
         );
         CREATE TABLE IF NOT EXISTS app_meta (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
-        PRAGMA user_version = 2;
+        PRAGMA user_version = 3;
         COMMIT;
         "#,
     )?;

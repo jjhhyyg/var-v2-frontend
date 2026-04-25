@@ -9,8 +9,6 @@ export interface TaskConfig {
   enablePreprocessing?: boolean
   preprocessingStrength?: string
   preprocessingEnhancePool?: boolean
-  enableTrackingMerge?: boolean
-  trackingMergeStrategy?: string
 }
 
 export interface Task {
@@ -94,23 +92,24 @@ export interface AnomalyEvent {
   eventType: string
   startFrame: number
   endFrame: number
-  objectId?: string
+  startTime?: number
+  endTime?: number
   metadata?: Record<string, unknown>
 }
 
-export interface TrajectoryPoint {
-  bbox: [number, number, number, number]
-  frame: number
-  confidence: number
+export interface VideoInfo {
+  sourceVideoFps: number
+  totalFrames: number
+  width: number
+  height: number
 }
 
-export interface TrackingObject {
-  trackingId: string
-  objectId: string
-  category: string
-  firstFrame: number
-  lastFrame: number
-  trajectory?: TrajectoryPoint[]
+export interface PerformanceInfo {
+  preprocessingAverageFps?: number | null
+  defectDetectionAverageFps?: number | null
+  preprocessingDurationSeconds: number
+  defectDetectionDurationSeconds: number
+  detectionBackend: string
 }
 
 export interface GlobalAnalysisMetric {
@@ -125,12 +124,12 @@ export interface TaskResult {
   name: string
   status: string
   isTimeout: boolean
+  videoInfo: VideoInfo
+  performance: PerformanceInfo
   dynamicMetrics: DynamicMetric[]
   globalAnalysis?: Record<string, GlobalAnalysisMetric>
   anomalyEvents: AnomalyEvent[]
-  trackingObjects: TrackingObject[]
   eventStatistics: Record<string, number>
-  objectStatistics: Record<string, number>
 }
 
 export interface PageResult<T> {

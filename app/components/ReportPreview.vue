@@ -86,11 +86,10 @@ const perimeterTrend = computed(() => {
 // 事件类型映射（对应后端 EventType 枚举）
 const eventTypeMap: Record<string, string> = {
   POOL_NOT_REACHED: '熔池未到边',
-  ADHESION_FORMED: '电极形成粘连物',
-  ADHESION_DROPPED: '电极粘连物脱落',
-  CROWN_DROPPED: '锭冠脱落',
+  ADHESION: '电极粘连物',
+  CROWN: '锭冠',
   GLOW: '辉光',
-  SIDE_ARC: '边弧',
+  SIDE_ARC: '边弧（侧弧）',
   CREEPING_ARC: '爬弧'
 }
 
@@ -115,7 +114,7 @@ const groupedEvents = computed(() => {
   props.result.anomalyEvents.forEach((event) => {
     const startTime = formatFrameToTime(event.startFrame)
     const endTime = formatFrameToTime(event.endFrame)
-    const durationFrames = event.endFrame - event.startFrame
+    const durationFrames = event.endFrame - event.startFrame + 1
     const durationSeconds = durationFrames / fps.value
     const duration = durationSeconds.toFixed(1) + '秒'
 
@@ -295,15 +294,7 @@ const groupedEvents = computed(() => {
                 {{ event.duration }}
               </td>
               <td class="px-4 py-3 text-sm text-muted">
-                <span v-if="event.eventType === '电极粘连物脱落' && event.metadata">
-                  <span v-if="event.metadata.droppedIntoPool" class="text-red-600 dark:text-red-400">
-                    ⚠️ 掉落进熔池
-                  </span>
-                  <span v-else class="text-green-600 dark:text-green-400">
-                    ✓ 被结晶器捕获
-                  </span>
-                </span>
-                <span v-else-if="event.metadata">
+                <span v-if="event.metadata">
                   {{ JSON.stringify(event.metadata) }}
                 </span>
                 <span v-else>-</span>

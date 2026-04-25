@@ -122,7 +122,13 @@ pub(crate) fn validate_active_windows_runtime_with_progress(
     validate_runtime_manifest(&manifest)?;
     emit_runtime_progress(app, "layout", 0.6, "检查算法包文件结构");
     validate_runtime_layout(&windows_active_runtime_dir(paths))?;
-    validate_manifest_files_with_progress(&windows_active_runtime_dir(paths), &manifest, app, 0.6, 0.85)?;
+    validate_manifest_files_with_progress(
+        &windows_active_runtime_dir(paths),
+        &manifest,
+        app,
+        0.6,
+        0.85,
+    )?;
     Ok(manifest)
 }
 
@@ -296,12 +302,7 @@ pub(crate) fn extract_runtime_zip_with_progress(
     Ok(())
 }
 
-fn emit_runtime_progress(
-    app: Option<&AppHandle>,
-    stage: &str,
-    progress: f64,
-    message: &str,
-) {
+fn emit_runtime_progress(app: Option<&AppHandle>, stage: &str, progress: f64, message: &str) {
     if let Some(app) = app {
         let _ = app.emit(
             "runtime-import-progress",

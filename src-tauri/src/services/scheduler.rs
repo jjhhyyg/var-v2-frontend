@@ -31,10 +31,12 @@ pub(crate) fn load_pending_queue_recovery_tasks(
 }
 
 pub(crate) fn spawn_scheduler_tick_loop(state: DesktopState, app: AppHandle) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(2));
-        if let Err(error) = try_schedule_tasks(&state, &app) {
-            backend_log_error(format!("scheduler tick failed: {error}"));
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(2));
+            if let Err(error) = try_schedule_tasks(&state, &app) {
+                backend_log_error(format!("scheduler tick failed: {error}"));
+            }
         }
     });
 }

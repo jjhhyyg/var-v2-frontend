@@ -6,8 +6,6 @@ pub(crate) fn default_task_config_input() -> TaskConfigInput {
         enable_preprocessing: Some(false),
         preprocessing_strength: Some("moderate".to_string()),
         preprocessing_enhance_pool: Some(false),
-        enable_tracking_merge: Some(false),
-        tracking_merge_strategy: Some("auto".to_string()),
     }
 }
 
@@ -59,19 +57,15 @@ pub(crate) fn create_task_from_import(
     } else {
         false
     };
-    let enable_tracking_merge = config_input.enable_tracking_merge.unwrap_or(false);
-    let tracking_merge_strategy = config_input
-        .tracking_merge_strategy
-        .unwrap_or_else(|| "auto".to_string());
     let timeout_threshold = parse_timeout_ratio(&timeout_ratio, info.duration_seconds)?;
 
     let mut conn = state.open_db()?;
     let tx = conn.transaction()?;
     tx.execute(
         "INSERT INTO analysis_tasks (name, original_filename, original_video_rel_path, analysis_input_rel_path, result_video_rel_path,
-                                     preprocessed_video_rel_path, tracking_rel_path, video_duration, status, timeout_threshold,
+                                     preprocessed_video_rel_path, video_duration, status, timeout_threshold,
                                      is_timeout, created_at, queue_order)
-         VALUES (?1, ?2, '', NULL, NULL, NULL, NULL, ?3, 'PENDING', ?4, 0, ?5, NULL)",
+         VALUES (?1, ?2, '', NULL, NULL, NULL, ?3, 'PENDING', ?4, 0, ?5, NULL)",
         params![
             name.unwrap_or_else(|| default_task_name(&source_path)),
             source_path.file_name().and_then(|value| value.to_str()).map(str::to_string),
@@ -84,16 +78,14 @@ pub(crate) fn create_task_from_import(
 
     tx.execute(
         "INSERT INTO task_configs (task_id, timeout_ratio, model_version, enable_preprocessing, preprocessing_strength,
-                                   preprocessing_enhance_pool, enable_tracking_merge, tracking_merge_strategy, frame_rate)
-         VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, ?8)",
+                                   preprocessing_enhance_pool, frame_rate)
+         VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6)",
         params![
             task_id,
             timeout_ratio,
             enable_preprocessing as i64,
             preprocessing_strength,
             preprocessing_enhance_pool as i64,
-            enable_tracking_merge as i64,
-            tracking_merge_strategy,
             info.frame_rate
         ],
     )?;

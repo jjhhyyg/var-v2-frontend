@@ -129,7 +129,7 @@
               size="xs"
               icon="i-lucide-chevron-left"
               variant="outline"
-              :disabled="currentFrame <= 1"
+              :disabled="currentFrame <= 0"
               @click="previousFrame"
             >
               上一帧
@@ -148,14 +148,14 @@
                 @input="validateFrameInput"
               />
               <span class="frame-separator">/</span>
-              <span class="total-frames">{{ totalFrames }}</span>
+              <span class="total-frames">{{ totalFrameMax }}</span>
             </div>
 
             <UButton
               size="xs"
               icon="i-lucide-chevron-right"
               variant="outline"
-              :disabled="currentFrame >= totalFrames"
+              :disabled="currentFrame >= totalFrameMax"
               @click="nextFrame"
             >
               下一帧
@@ -191,6 +191,20 @@
 
           <!-- 事件标记 -->
           <div
+            v-for="event in sortedEvents"
+            :key="`${event.eventId}-range`"
+            class="event-range"
+            :style="{
+              left: getEventRangeStart(event) + '%',
+              width: getEventRangeWidth(event) + '%',
+              top: getEventLaneTop(event.eventType)
+            }"
+            :class="getEventClass(event.eventType)"
+            :title="getEventTooltip(event)"
+            @click.stop="seekToEvent(event)"
+          />
+
+          <div
             v-for="event in events"
             :key="event.eventId"
             class="event-marker"
@@ -205,19 +219,6 @@
               :class="getEventClass(event.eventType)"
             />
           </div>
-
-          <!-- 物体出现时间段 -->
-          <div
-            v-for="obj in trackingObjects"
-            :key="obj.trackingId"
-            class="object-range"
-            :style="{
-              left: getObjectRangeStart(obj) + '%',
-              width: getObjectRangeWidth(obj) + '%'
-            }"
-            :class="getObjectClass(obj.category)"
-            :title="getObjectTooltip(obj)"
-          />
 
           <!-- 当前时间标线 -->
           <div
@@ -356,33 +357,24 @@ interface Event {
   eventType: string
   startFrame: number
   endFrame: number
-  objectId?: string
+  startTime?: number
+  endTime?: number
   metadata?: Record<string, unknown>
-}
-
-interface TrackingObject {
-  trackingId: string
-  objectId: string
-  category: string
-  firstFrame: number
-  lastFrame: number
-  trajectory?: Array<Record<string, unknown>>
 }
 
 interface Props {
   taskId: string
   videoDuration: number
   frameRate?: number
+  totalFrames?: number
   resultVideoPath?: string
   preprocessedVideoPath?: string
   events?: Event[]
-  trackingObjects?: TrackingObject[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
   frameRate: 25,
-  events: () => [],
-  trackingObjects: () => []
+  events: () => []
 })
 
 const videoPlayer = ref<HTMLVideoElement>()
@@ -394,7 +386,7 @@ const isPlaying = ref(false)
 const videoError = ref(false)
 const videoErrorMessage = ref('')
 const videoLoading = ref(true)
-const currentFrameInput = ref('1')
+const currentFrameInput = ref('0')
 const selectedEventId = ref<string | null>(null)
 const isDraggingTimeline = ref(false)
 const wasPlayingBeforeDrag = ref(false)
@@ -420,12 +412,19 @@ const fps = computed(() => props.frameRate)
 // 当前帧号（基于当前时间和帧率）
 // 使用 Math.floor 确保帧号在正确的范围内
 const currentFrame = computed(() => {
-  return Math.floor(currentTime.value * fps.value) + 1
+  return Math.min(totalFrameMax.value, Math.floor(currentTime.value * fps.value))
 })
 
 // 总帧数
 const totalFrames = computed(() => {
+  if (props.totalFrames && props.totalFrames > 0) {
+    return props.totalFrames
+  }
   return Math.floor(duration.value * fps.value)
+})
+
+const totalFrameMax = computed(() => {
+  return Math.max(0, totalFrames.value - 1)
 })
 
 // 监听当前帧变化，更新输入框
@@ -581,32 +580,36 @@ const getEventPosition = (timestamp: number): number => {
   return (timestamp / duration.value) * 100
 }
 
-// 获取物体出现范围起始位置
-const getObjectRangeStart = (obj: TrackingObject): number => {
+const getEventRangeStart = (event: Event): number => {
   if (duration.value === 0) return 0
-  const firstTimestamp = frameToTimestamp(obj.firstFrame)
-  return (firstTimestamp / duration.value) * 100
+  return getEventPosition(frameToTimestamp(event.startFrame))
 }
 
-// 获取物体出现范围宽度
-const getObjectRangeWidth = (obj: TrackingObject): number => {
+const getEventRangeWidth = (event: Event): number => {
   if (duration.value === 0) return 0
-  const firstTimestamp = frameToTimestamp(obj.firstFrame)
-  const lastTimestamp = frameToTimestamp(obj.lastFrame)
-  const rangeDuration = lastTimestamp - firstTimestamp
+  const rangeDuration = Math.max(1 / fps.value, frameToTimestamp(event.endFrame - event.startFrame + 1))
   const percentage = (rangeDuration / duration.value) * 100
-
-  // 如果firstFrame和lastFrame相同(单帧物体),设置最小宽度0.5%以确保可见
   return percentage > 0 ? percentage : 0.5
+}
+
+const getEventLaneTop = (eventType: string): string => {
+  const laneMap: Record<string, number> = {
+    POOL_NOT_REACHED: 6,
+    ADHESION: 14,
+    CROWN: 22,
+    GLOW: 30,
+    SIDE_ARC: 38,
+    CREEPING_ARC: 46
+  }
+  return `${laneMap[eventType] ?? 26}px`
 }
 
 // 获取事件样式类
 const getEventClass = (eventType: string): string => {
   const typeMap: Record<string, string> = {
     POOL_NOT_REACHED: 'event-pool',
-    ADHESION_FORMED: 'event-adhesion',
-    ADHESION_DROPPED: 'event-adhesion',
-    CROWN_DROPPED: 'event-crown',
+    ADHESION: 'event-adhesion',
+    CROWN: 'event-crown',
     GLOW: 'event-glow',
     SIDE_ARC: 'event-side-arc',
     CREEPING_ARC: 'event-creeping-arc'
@@ -618,9 +621,8 @@ const getEventClass = (eventType: string): string => {
 const getEventBadgeColor = (eventType: string): 'error' | 'info' | 'success' | 'primary' | 'secondary' | 'warning' | 'neutral' => {
   const colorMap: Record<string, 'error' | 'info' | 'success' | 'primary' | 'secondary' | 'warning' | 'neutral'> = {
     POOL_NOT_REACHED: 'success',
-    ADHESION_FORMED: 'error',
-    ADHESION_DROPPED: 'warning',
-    CROWN_DROPPED: 'primary',
+    ADHESION: 'error',
+    CROWN: 'primary',
     GLOW: 'info',
     SIDE_ARC: 'secondary',
     CREEPING_ARC: 'warning'
@@ -628,26 +630,12 @@ const getEventBadgeColor = (eventType: string): 'error' | 'info' | 'success' | '
   return colorMap[eventType] || 'neutral'
 }
 
-// 获取物体样式类
-const getObjectClass = (category: string): string => {
-  const categoryMap: Record<string, string> = {
-    POOL_NOT_REACHED: 'object-pool',
-    ADHESION: 'object-adhesion',
-    CROWN: 'object-crown',
-    GLOW: 'object-glow',
-    SIDE_ARC: 'object-side-arc',
-    CREEPING_ARC: 'object-creeping-arc'
-  }
-  return categoryMap[category] || 'object-default'
-}
-
 // 获取事件类型标签
 const getEventTypeLabel = (eventType: string): string => {
   const labelMap: Record<string, string> = {
     POOL_NOT_REACHED: '熔池未到边',
-    ADHESION_FORMED: '电极形成粘连物',
-    ADHESION_DROPPED: '电极粘连物脱落',
-    CROWN_DROPPED: '锭冠脱落',
+    ADHESION: '电极粘连物',
+    CROWN: '锭冠',
     GLOW: '辉光',
     SIDE_ARC: '边弧（侧弧）',
     CREEPING_ARC: '爬弧'
@@ -661,53 +649,12 @@ const getEventTooltip = (event: Event): string => {
   return `${getEventTypeLabel(event.eventType)} - ${formatTime(timestamp)}`
 }
 
-// 获取事件的详细描述信息
 const getEventDetail = (event: Event): string => {
-  // 如果是粘连物掉落事件，显示掉落位置
-  if (event.eventType === 'ADHESION_DROPPED' && event.metadata?.dropped_location) {
-    const position = event.metadata.dropped_location as string
-    const positionMap: Record<string, string> = {
-      pool: '落入熔池内',
-      crystallizer: '结晶器捕获'
-    }
-    return positionMap[position] || position
+  const maxConfidence = event.metadata?.maxConfidence
+  if (typeof maxConfidence === 'number') {
+    return `最高置信度 ${maxConfidence.toFixed(2)}`
   }
-
-  // 如果是锭冠脱落事件，也显示掉落位置
-  if (event.eventType === 'CROWN_DROPPED' && event.metadata?.dropped_location) {
-    const position = event.metadata.dropped_location as string
-    const positionMap: Record<string, string> = {
-      pool: '落入熔池内',
-      crystallizer: '结晶器捕获'
-    }
-    return positionMap[position] || position
-  }
-
-  // 其他事件返回空字符串
   return ''
-}
-
-// 获取类别中文名称
-const getCategoryLabel = (category: string): string => {
-  const categoryMap: Record<string, string> = {
-    POOL_NOT_REACHED: '熔池未到边',
-    ADHESION: '电极粘连物',
-    CROWN: '锭冠',
-    GLOW: '辉光',
-    SIDE_ARC: '边弧（侧弧）',
-    CREEPING_ARC: '爬弧'
-  }
-  return categoryMap[category] || category
-}
-
-// 获取物体提示信息
-const getObjectTooltip = (obj: TrackingObject): string => {
-  const firstTimestamp = frameToTimestamp(obj.firstFrame)
-  const lastTimestamp = frameToTimestamp(obj.lastFrame)
-  const categoryLabel = getCategoryLabel(obj.category)
-  return `${categoryLabel} (ID: ${obj.objectId}) - ${formatTime(
-    firstTimestamp
-  )} ~ ${formatTime(lastTimestamp)}`
 }
 
 // 跳转到事件时间点
@@ -717,7 +664,7 @@ const seekToEvent = (event: Event) => {
 
   if (videoPlayer.value) {
     // 跳转到事件开始帧的起始时间，加上小的偏移量
-    videoPlayer.value.currentTime = (event.startFrame - 1) / fps.value + 0.001
+    videoPlayer.value.currentTime = event.startFrame / fps.value + 0.001
     if (!isPlaying.value) {
       videoPlayer.value.pause()
     }
@@ -810,18 +757,16 @@ const onTimelineMouseUp = () => {
 
 // 上一帧
 const previousFrame = () => {
-  if (!videoPlayer.value || currentFrame.value <= 1) return
+  if (!videoPlayer.value || currentFrame.value <= 0) return
   const targetFrame = currentFrame.value - 1
-  // 跳转到目标帧的起始时间，加上小的偏移量确保落在正确的帧内
-  videoPlayer.value.currentTime = (targetFrame - 1) / fps.value + 0.001
+  videoPlayer.value.currentTime = targetFrame / fps.value + 0.001
 }
 
 // 下一帧
 const nextFrame = () => {
-  if (!videoPlayer.value || currentFrame.value >= totalFrames.value) return
+  if (!videoPlayer.value || currentFrame.value >= totalFrameMax.value) return
   const targetFrame = currentFrame.value + 1
-  // 跳转到目标帧的起始时间，加上小的偏移量确保落在正确的帧内
-  videoPlayer.value.currentTime = (targetFrame - 1) / fps.value + 0.001
+  videoPlayer.value.currentTime = targetFrame / fps.value + 0.001
 }
 
 // 验证帧号输入（只允许数字）
@@ -843,12 +788,10 @@ const jumpToFrame = () => {
     return
   }
 
-  // 限制帧号范围
-  const clampedFrame = Math.max(1, Math.min(targetFrame, totalFrames.value))
+  const clampedFrame = Math.max(0, Math.min(targetFrame, totalFrameMax.value))
   currentFrameInput.value = String(clampedFrame)
 
-  // 跳转到目标帧的起始时间（帧号从1开始，时间从0开始），加上小的偏移量
-  videoPlayer.value.currentTime = (clampedFrame - 1) / fps.value + 0.001
+  videoPlayer.value.currentTime = clampedFrame / fps.value + 0.001
 }
 
 watch(
@@ -1158,6 +1101,19 @@ watch(
   filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.6));
 }
 
+.event-range {
+  position: absolute;
+  height: 7px;
+  border-radius: 999px;
+  opacity: 0.55;
+  cursor: pointer;
+  z-index: 7;
+}
+
+.event-range:hover {
+  opacity: 0.75;
+}
+
 .event-marker {
   position: absolute;
   top: 50%;
@@ -1186,26 +1142,6 @@ watch(
 .event-side-arc { background: rgb(128, 0, 128); }
 .event-creeping-arc { background: rgb(255, 165, 0); }
 .event-default { background: #666; }
-
-/* 物体出现时间段 */
-.object-range {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  opacity: 0.3;
-  pointer-events: none;
-  transition: opacity 0.2s;
-}
-
-.object-range:hover { opacity: 0.5; }
-
-.object-pool { background: rgb(0, 100, 0); }
-.object-adhesion { background: rgb(255, 0, 0); }
-.object-crown { background: rgb(0, 0, 255); }
-.object-glow { background: rgb(0, 255, 255); }
-.object-side-arc { background: rgb(128, 0, 128); }
-.object-creeping-arc { background: rgb(255, 165, 0); }
-.object-default { background: #666; }
 
 .timeline-legend {
   display: flex;

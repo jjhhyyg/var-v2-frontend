@@ -335,7 +335,7 @@ pub(crate) fn reanalyze_task(
 
     let _ = fs::remove_file(task_dir.join("output").join("result.mp4"));
     let _ = fs::remove_file(task_dir.join("output").join("preprocessed.mp4"));
-    let _ = fs::remove_file(task_dir.join("output").join("tracking.json"));
+    let _ = fs::remove_file(task_dir.join("output").join("detections.json"));
 
     state.runtime.progress.write().remove(&task_id);
     enqueue_tasks(&state, &app, &[task_id], &["PENDING"]).map_err(|error| error.to_string())?;

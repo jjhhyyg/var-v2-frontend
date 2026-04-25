@@ -38,11 +38,7 @@ pub(crate) fn resolve_resource_file(
     let dev = dev_fallback
         .iter()
         .fold(repo_root, |acc, part| acc.join(part));
-    if dev.exists() {
-        Some(dev)
-    } else {
-        None
-    }
+    if dev.exists() { Some(dev) } else { None }
 }
 
 pub(crate) fn bundled_binary_name(name: &str) -> String {
@@ -100,11 +96,7 @@ pub(crate) fn resolve_runtime_resource_file(
             .join(platform),
         |acc, part| acc.join(part),
     );
-    if dev.exists() {
-        Some(dev)
-    } else {
-        None
-    }
+    if dev.exists() { Some(dev) } else { None }
 }
 
 pub(crate) fn runtime_cache_platform_dir(paths: &ControlPaths) -> PathBuf {
@@ -256,7 +248,10 @@ pub(crate) fn resolve_ffprobe_path(paths: &ControlPaths) -> PathBuf {
 pub(crate) fn resolve_model_path(paths: &ControlPaths) -> anyhow::Result<PathBuf> {
     if cfg!(debug_assertions) {
         let repo_root = workspace_root_from_resource_dir(&paths.resource_dir);
-        let dev_model = repo_root.join("ai-processor").join("weights").join("best.pt");
+        let dev_model = repo_root
+            .join("ai-processor")
+            .join("weights")
+            .join("best.pt");
         if dev_model.exists() {
             return Ok(dev_model);
         }

@@ -29,8 +29,6 @@ pub(crate) struct TaskConfigData {
     pub(crate) enable_preprocessing: bool,
     pub(crate) preprocessing_strength: String,
     pub(crate) preprocessing_enhance_pool: bool,
-    pub(crate) enable_tracking_merge: bool,
-    pub(crate) tracking_merge_strategy: String,
     pub(crate) frame_rate: f64,
 }
 
@@ -58,12 +56,31 @@ pub(crate) struct TaskResultResponse {
     pub(crate) name: String,
     pub(crate) status: String,
     pub(crate) is_timeout: bool,
+    pub(crate) video_info: VideoInfoData,
+    pub(crate) performance: PerformanceData,
     pub(crate) dynamic_metrics: Vec<DynamicMetricData>,
     pub(crate) global_analysis: Option<Value>,
     pub(crate) anomaly_events: Vec<AnomalyEventData>,
-    pub(crate) tracking_objects: Vec<TrackingObjectData>,
     pub(crate) event_statistics: HashMap<String, i64>,
-    pub(crate) object_statistics: HashMap<String, i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VideoInfoData {
+    pub(crate) source_video_fps: f64,
+    pub(crate) total_frames: i64,
+    pub(crate) width: i64,
+    pub(crate) height: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PerformanceData {
+    pub(crate) preprocessing_average_fps: Option<f64>,
+    pub(crate) defect_detection_average_fps: Option<f64>,
+    pub(crate) preprocessing_duration_seconds: i64,
+    pub(crate) defect_detection_duration_seconds: i64,
+    pub(crate) detection_backend: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,19 +100,9 @@ pub(crate) struct AnomalyEventData {
     pub(crate) event_type: String,
     pub(crate) start_frame: i64,
     pub(crate) end_frame: i64,
-    pub(crate) object_id: Option<i64>,
+    pub(crate) start_time: Option<f64>,
+    pub(crate) end_time: Option<f64>,
     pub(crate) metadata: Option<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct TrackingObjectData {
-    pub(crate) tracking_id: String,
-    pub(crate) object_id: i64,
-    pub(crate) category: String,
-    pub(crate) first_frame: i64,
-    pub(crate) last_frame: i64,
-    pub(crate) trajectory: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]

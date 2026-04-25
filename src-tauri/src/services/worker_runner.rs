@@ -46,8 +46,6 @@ pub(crate) fn run_task_worker(
             enable_preprocessing: config.enable_preprocessing,
             preprocessing_strength: config.preprocessing_strength,
             preprocessing_enhance_pool: config.preprocessing_enhance_pool,
-            enable_tracking_merge: config.enable_tracking_merge,
-            tracking_merge_strategy: config.tracking_merge_strategy,
         },
     };
     cleanup_logs(LogNamespace::Worker)?;
@@ -84,8 +82,8 @@ pub(crate) fn run_task_worker(
         .env("STORAGE_BASE_PATH", &task_dir)
         .env("STORAGE_PREPROCESSED_VIDEOS_SUBDIR", "output")
         .env("STORAGE_RESULT_VIDEOS_SUBDIR", "output")
-        .env("STORAGE_TRACKING_RESULTS_SUBDIR", "output")
-        .env("TRACKING_RESULTS_FILENAME_TEMPLATE", "tracking.json")
+        .env("STORAGE_DETECTION_RESULTS_SUBDIR", "output")
+        .env("DETECTION_RESULTS_FILENAME_TEMPLATE", "detections.json")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
