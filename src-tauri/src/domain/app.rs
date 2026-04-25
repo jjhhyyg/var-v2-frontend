@@ -99,6 +99,7 @@ pub(crate) struct TaskConfigInput {
     pub(crate) enable_preprocessing: Option<bool>,
     pub(crate) preprocessing_strength: Option<String>,
     pub(crate) preprocessing_enhance_pool: Option<bool>,
+    pub(crate) enable_dynamic_metrics: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

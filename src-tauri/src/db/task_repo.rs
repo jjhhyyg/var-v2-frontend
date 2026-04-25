@@ -138,7 +138,7 @@ pub(crate) fn load_task_config(
 ) -> anyhow::Result<Option<TaskConfigData>> {
     let mut stmt = conn.prepare(
         "SELECT timeout_ratio, model_version, enable_preprocessing, preprocessing_strength,
-                preprocessing_enhance_pool, frame_rate
+                preprocessing_enhance_pool, enable_dynamic_metrics, frame_rate
            FROM task_configs WHERE task_id = ?1",
     )?;
 
@@ -150,7 +150,8 @@ pub(crate) fn load_task_config(
                 enable_preprocessing: row.get::<_, i64>(2)? != 0,
                 preprocessing_strength: row.get(3)?,
                 preprocessing_enhance_pool: row.get::<_, i64>(4)? != 0,
-                frame_rate: row.get(5)?,
+                enable_dynamic_metrics: row.get::<_, i64>(5)? != 0,
+                frame_rate: row.get(6)?,
             })
         })
         .optional()?;

@@ -248,23 +248,28 @@ pub(crate) fn resolve_ffprobe_path(paths: &ControlPaths) -> PathBuf {
 pub(crate) fn resolve_model_path(paths: &ControlPaths) -> anyhow::Result<PathBuf> {
     if cfg!(debug_assertions) {
         let repo_root = workspace_root_from_resource_dir(&paths.resource_dir);
-        let dev_model = repo_root
-            .join("ai-processor")
-            .join("weights")
-            .join("best.pt");
-        if dev_model.exists() {
-            return Ok(dev_model);
+        let weights_dir = repo_root.join("ai-processor").join("weights");
+        let model_names = if cfg!(target_os = "windows") {
+            ["best.onnx", "best.pt"]
+        } else {
+            ["best.pt", "best.onnx"]
+        };
+        for model_name in model_names {
+            let dev_model = weights_dir.join(model_name);
+            if dev_model.exists() {
+                return Ok(dev_model);
+            }
         }
     }
 
     if cfg!(target_os = "windows") {
         let path = windows_active_runtime_dir(paths)
             .join("models")
-            .join("best.pt");
+            .join("best.onnx");
         if path.exists() {
             return Ok(path);
         }
-        return Err(anyhow!("Windows 算法包尚未导入或模型文件缺失 best.pt"));
+        return Err(anyhow!("Windows 算法包尚未导入或模型文件缺失 best.onnx"));
     }
 
     resolve_resource_file(
@@ -393,10 +398,10 @@ fn development_python_candidates(paths: &ControlPaths) -> Vec<String> {
 
 fn python_worker_dependencies_ready(python: &str) -> bool {
     let mut command = Command::new(python);
-    command.args([
-        "-c",
-        "import cv2, torch, ultralytics, dotenv, numpy, scipy, PIL, lap",
-    ]);
+    command.args(["-c", "import cv2, onnxruntime, dotenv, numpy, scipy, PIL"]);
+    command
+        .env("ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS", "1")
+        .env("ONNX_REQUIRE_CUDA", "0");
     suppress_command_window(&mut command)
         .status()
         .map(|status| status.success())

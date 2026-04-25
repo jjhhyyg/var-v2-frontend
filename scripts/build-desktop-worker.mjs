@@ -18,6 +18,69 @@ const legacyBinResourcesDir = join(resourcesDir, 'bin')
 const pyInstallerRoot = join(frontendDir, '.tauri-worker-build')
 const workerVenvDir = join(frontendDir, '.desktop-worker-venv')
 const workerBuildStampPath = join(pyInstallerRoot, 'worker-build-stamp.json')
+const workerPyInstallerSpecPath = join(pyInstallerRoot, 'desktop_worker.spec')
+const onnxExportStampPath = join(pyInstallerRoot, 'onnx-export-stamp.json')
+const sourcePtModelPath = join(aiDir, 'weights', 'best.pt')
+const sourceOnnxModelPath = join(aiDir, 'weights', 'best.onnx')
+const onnxExportConfig = Object.freeze({
+  format: 'onnx',
+  imgsz: (process.env.TAURI_WORKER_ONNX_IMGSZ ?? '640,1024')
+    .split(',')
+    .map(value => Number(value.trim())),
+  opset: Number(process.env.TAURI_WORKER_ONNX_OPSET ?? 17),
+  dynamic: false,
+  simplify: false,
+  half: false,
+  nms: false
+})
+const workerPyInstallerExcludes = Object.freeze([
+  // GUI / notebook stacks are not used by the desktop NDJSON worker.
+  'PyQt5',
+  'PyQt6',
+  'PySide2',
+  'PySide6',
+  'tkinter',
+  'IPython',
+  'ipykernel',
+  'jupyter',
+  'notebook',
+  'nbconvert',
+  'nbformat',
+
+  // Plotting and data science helpers pulled in by optional Ultralytics paths.
+  'matplotlib',
+  'pandas',
+  'seaborn',
+  'skimage',
+  'sklearn',
+
+  // Training, experiment tracking, documentation, and test-only integrations.
+  'pytest',
+  'sphinx',
+  'tensorboard',
+  'tensorboardX',
+  'wandb',
+  'clearml',
+  'comet_ml',
+  'mlflow',
+  'ray',
+  'dvc',
+
+  // Model export / alternative runtime backends outside Phase 0/1 inference.
+  'coremltools',
+  'mss',
+  'ncnn',
+  'onnx',
+  'openvino',
+  'paddle',
+  'paddlepaddle',
+  'pycocotools',
+  'tensorflow',
+  'tensorrt',
+  'torch',
+  'torchvision',
+  'ultralytics'
+])
 
 function platformSlug() {
   const platform = process.platform === 'darwin'
@@ -49,14 +112,20 @@ function runCommand(cmd, args, options = {}) {
   }
 }
 
+function workerPythonEnv(extra = {}) {
+  return {
+    ...process.env,
+    MPLBACKEND: 'Agg',
+    ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS: '1',
+    ...extra
+  }
+}
+
 function verifyPackagedWorker(distDir) {
   const executable = join(distDir, bundledExecutableName('desktop_worker'))
-  runCommand(executable, ['--self-check'], {
+  runCommand(executable, ['--self-check', '--backend', 'onnx', '--model', sourceOnnxModelPath], {
     cwd: aiDir,
-    env: {
-      ...process.env,
-      ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS: '1'
-    }
+    env: workerPythonEnv({ ONNX_REQUIRE_CUDA: '1' })
   })
 }
 
@@ -124,6 +193,288 @@ function normalizeBundledResource(targetPath) {
   }
 
   chmodSync(targetPath, 0o644)
+}
+
+function pruneLegacyWorkerPackages(distDir) {
+  const internalDir = join(distDir, '_internal')
+  if (!existsSync(internalDir)) {
+    return
+  }
+
+  const torchLibDir = join(internalDir, 'torch', 'lib')
+  if (existsSync(torchLibDir)) {
+    for (const entry of readdirSync(torchLibDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.dll')) {
+        continue
+      }
+
+      const targetDll = join(internalDir, entry.name)
+      if (!existsSync(targetDll)) {
+        cpSync(join(torchLibDir, entry.name), targetDll, { dereference: true })
+      }
+    }
+  }
+
+  for (const legacyPackage of ['torch', 'torchvision', 'ultralytics']) {
+    rmSync(join(internalDir, legacyPackage), { recursive: true, force: true })
+  }
+}
+
+function pythonLiteral(value) {
+  return JSON.stringify(value, null, 2)
+}
+
+function writeWorkerPyInstallerSpec() {
+  writeFileSync(workerPyInstallerSpecPath, `# -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
+a = Analysis(
+    [${pythonLiteral(join(aiDir, 'desktop_worker.py'))}],
+    pathex=${pythonLiteral([aiDir])},
+    binaries=[],
+    datas=[],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=${pythonLiteral(workerPyInstallerExcludes)},
+    noarchive=False,
+    optimize=1,
+)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='desktop_worker',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='desktop_worker',
+)
+`, 'utf-8')
+}
+
+function boolArg(value) {
+  return value ? '1' : '0'
+}
+
+function readJsonFile(path) {
+  if (!existsSync(path)) {
+    return null
+  }
+
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
+function validateOnnxExportConfig() {
+  const imageSizes = Array.isArray(onnxExportConfig.imgsz)
+    ? onnxExportConfig.imgsz
+    : [onnxExportConfig.imgsz]
+
+  if (
+    imageSizes.length === 0
+    || imageSizes.length > 2
+    || imageSizes.some(value => !Number.isInteger(value) || value <= 0)
+  ) {
+    throw new Error(`非法 ONNX imgsz: ${onnxExportConfig.imgsz}`)
+  }
+
+  if (!Number.isInteger(onnxExportConfig.opset) || onnxExportConfig.opset <= 0) {
+    throw new Error(`非法 ONNX opset: ${onnxExportConfig.opset}`)
+  }
+}
+
+function requireOnnxCudaProvider(requirementsFile) {
+  const explicit = process.env.TAURI_WORKER_ONNX_REQUIRE_CUDA
+  if (explicit !== undefined) {
+    return !['0', 'false', 'FALSE', 'no', 'NO'].includes(explicit)
+  }
+
+  return process.platform === 'win32' && requirementsFile.toLowerCase().includes('cuda')
+}
+
+function onnxStampPayload({ pythonIdentity, requirementsFile }) {
+  const sourceStats = statSync(sourcePtModelPath)
+  return {
+    sourceModel: sourcePtModelPath,
+    sourceMtime: Math.floor(sourceStats.mtimeMs),
+    sourceSize: sourceStats.size,
+    targetModel: sourceOnnxModelPath,
+    pythonIdentity,
+    requirementsFile,
+    exportConfig: onnxExportConfig
+  }
+}
+
+function onnxModelNeedsExport(payload) {
+  if (!existsSync(sourceOnnxModelPath)) {
+    return true
+  }
+
+  const stamp = readJsonFile(onnxExportStampPath)
+  return JSON.stringify(stamp) !== JSON.stringify(payload)
+}
+
+function exportOnnxModel(python) {
+  const exportScript = `
+import shutil
+import sys
+import json
+from pathlib import Path
+
+from ultralytics import YOLO
+
+source = Path(sys.argv[1]).resolve()
+target = Path(sys.argv[2]).resolve()
+imgsz = json.loads(sys.argv[3])
+opset = int(sys.argv[4])
+dynamic = sys.argv[5] == "1"
+simplify = sys.argv[6] == "1"
+half = sys.argv[7] == "1"
+nms = sys.argv[8] == "1"
+
+model = YOLO(str(source))
+exported = model.export(
+    format="onnx",
+    imgsz=imgsz,
+    opset=opset,
+    dynamic=dynamic,
+    simplify=simplify,
+    half=half,
+    nms=nms,
+    device="cpu",
+)
+exported_path = Path(exported).resolve()
+target.parent.mkdir(parents=True, exist_ok=True)
+if exported_path != target:
+    shutil.copy2(exported_path, target)
+print(f"ONNX export ready: {target}")
+`
+
+  runCommand(
+    python,
+    [
+      '-c',
+      exportScript,
+      sourcePtModelPath,
+      sourceOnnxModelPath,
+      JSON.stringify(onnxExportConfig.imgsz),
+      String(onnxExportConfig.opset),
+      boolArg(onnxExportConfig.dynamic),
+      boolArg(onnxExportConfig.simplify),
+      boolArg(onnxExportConfig.half),
+      boolArg(onnxExportConfig.nms)
+    ],
+    {
+      cwd: aiDir,
+      env: workerPythonEnv()
+    }
+  )
+}
+
+function verifyOnnxModel(python, requirementsFile) {
+  const smokeScript = `
+import json
+import sys
+
+import numpy as np
+import onnxruntime as ort
+
+try:
+    import torch  # noqa: F401
+except Exception:
+    pass
+
+try:
+    ort.preload_dlls()
+except AttributeError:
+    pass
+
+model_path = sys.argv[1]
+require_cuda = sys.argv[2] == "1"
+fallback_shape = json.loads(sys.argv[3])
+available_providers = ort.get_available_providers()
+
+if require_cuda and "CUDAExecutionProvider" not in available_providers:
+    raise SystemExit(f"CUDAExecutionProvider unavailable: {available_providers}")
+
+providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if "CUDAExecutionProvider" in available_providers else ["CPUExecutionProvider"]
+session = ort.InferenceSession(model_path, providers=providers)
+active_providers = session.get_providers()
+
+if require_cuda and "CUDAExecutionProvider" not in active_providers:
+    raise SystemExit(f"CUDAExecutionProvider not active: {active_providers}")
+
+input_meta = session.get_inputs()[0]
+shape = []
+for index, dim in enumerate(input_meta.shape):
+    if isinstance(dim, int) and dim > 0:
+        shape.append(dim)
+    elif index == 0:
+        shape.append(1)
+    elif index == 1:
+        shape.append(3)
+    else:
+        shape.append(int(fallback_shape[index - 2]))
+
+dummy = np.zeros(tuple(shape), dtype=np.float32)
+outputs = session.run(None, {input_meta.name: dummy})
+print(json.dumps({
+    "availableProviders": available_providers,
+    "activeProviders": active_providers,
+    "inputName": input_meta.name,
+    "inputShape": shape,
+    "outputShapes": [list(output.shape) for output in outputs],
+}, ensure_ascii=False))
+`
+
+  runCommand(
+    python,
+    [
+      '-c',
+      smokeScript,
+      sourceOnnxModelPath,
+      boolArg(requireOnnxCudaProvider(requirementsFile)),
+      JSON.stringify(Array.isArray(onnxExportConfig.imgsz) ? onnxExportConfig.imgsz : [onnxExportConfig.imgsz, onnxExportConfig.imgsz])
+    ],
+    {
+      cwd: aiDir,
+      env: workerPythonEnv()
+    }
+  )
+}
+
+function ensureOnnxModel({ python, pythonIdentity, requirementsFile }) {
+  validateOnnxExportConfig()
+
+  if (!existsSync(sourcePtModelPath)) {
+    throw new Error(`缺少 ONNX 导出源模型: ${sourcePtModelPath}`)
+  }
+
+  const payload = onnxStampPayload({ pythonIdentity, requirementsFile })
+  if (onnxModelNeedsExport(payload)) {
+    exportOnnxModel(python)
+  }
+
+  verifyOnnxModel(python, requirementsFile)
+  writeFileSync(onnxExportStampPath, JSON.stringify(payload, null, 2))
 }
 
 function resolveWhich(binary) {
@@ -267,11 +618,12 @@ function modulesReady(python) {
     python,
     [
       '-c',
-      'import PyInstaller, cv2, torch, ultralytics, dotenv, numpy, scipy, PIL, lap'
+      'import PyInstaller, cv2, torch, ultralytics, dotenv, numpy, scipy, PIL, onnx, onnxruntime'
     ],
     {
       stdio: 'pipe',
-      windowsHide: true
+      windowsHide: true,
+      env: workerPythonEnv()
     }
   )
 
@@ -376,8 +728,7 @@ function ensurePythonDependencies({ python, requirementsFile, stampPath, pythonI
   return { python, pythonIdentity }
 }
 
-function ensureBuildPython() {
-  const requirementsFile = resolveRequirementsFile()
+function ensureBuildPython(requirementsFile = resolveRequirementsFile()) {
   const condaEnvName = process.env.TAURI_WORKER_CONDA_ENV ?? 'var-env'
   const explicitPython = process.env.TAURI_WORKER_PYTHON
 
@@ -431,10 +782,9 @@ function ensureBuildPython() {
   })
 }
 
-function buildWorker() {
-  const requirementsFile = resolveRequirementsFile()
-  const { python, pythonIdentity } = ensureBuildPython()
-  const excludedModules = ['PyQt5', 'PyQt6', 'PySide2', 'PySide6']
+function buildWorker(buildContext = null) {
+  const requirementsFile = buildContext?.requirementsFile ?? resolveRequirementsFile()
+  const { python, pythonIdentity } = buildContext ?? ensureBuildPython(requirementsFile)
   const cachedWorkerDir = join(workerResourcesDir, 'desktop_worker')
   const sourceMtime = buildInputMtime(requirementsFile)
 
@@ -452,9 +802,10 @@ function buildWorker() {
   rmSync(workerResourcesDir, { recursive: true, force: true })
   rmSync(join(pyInstallerRoot, 'dist'), { recursive: true, force: true })
   rmSync(join(pyInstallerRoot, 'build'), { recursive: true, force: true })
-  rmSync(join(pyInstallerRoot, 'desktop_worker.spec'), { force: true })
+  rmSync(workerPyInstallerSpecPath, { force: true })
   ensureDir(workerResourcesDir)
   ensureDir(pyInstallerRoot)
+  writeWorkerPyInstallerSpec()
 
   const build = spawnSync(
     python,
@@ -463,30 +814,17 @@ function buildWorker() {
       'PyInstaller',
       '--noconfirm',
       '--clean',
-      '--onedir',
-      '--name',
-      'desktop_worker',
       '--distpath',
       join(pyInstallerRoot, 'dist'),
       '--workpath',
       join(pyInstallerRoot, 'build'),
-      '--specpath',
-      pyInstallerRoot,
-      '--paths',
-      aiDir,
-      '--collect-all',
-      'lap',
-      ...excludedModules.flatMap(moduleName => ['--exclude-module', moduleName]),
-      join(aiDir, 'desktop_worker.py')
+      workerPyInstallerSpecPath
     ],
     {
       stdio: 'inherit',
       windowsHide: true,
       cwd: aiDir,
-      env: {
-        ...process.env,
-        MPLBACKEND: 'Agg'
-      }
+      env: workerPythonEnv()
     }
   )
 
@@ -494,9 +832,11 @@ function buildWorker() {
     throw new Error('PyInstaller 构建桌面 worker 失败')
   }
 
-  verifyPackagedWorker(join(pyInstallerRoot, 'dist', 'desktop_worker'))
+  const packagedWorkerDir = join(pyInstallerRoot, 'dist', 'desktop_worker')
+  pruneLegacyWorkerPackages(packagedWorkerDir)
+  verifyPackagedWorker(packagedWorkerDir)
 
-  cpSync(join(pyInstallerRoot, 'dist', 'desktop_worker'), cachedWorkerDir, {
+  cpSync(packagedWorkerDir, cachedWorkerDir, {
     recursive: true,
     dereference: true
   })
@@ -518,15 +858,22 @@ function copyRuntimeResources() {
   const ffmpegBinaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
   const ffprobeBinaryName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
 
-  copyFileIfExists(join(aiDir, 'weights', 'best.pt'), modelResourcesDir, 'best.pt')
+  copyFileIfExists(sourceOnnxModelPath, modelResourcesDir, 'best.onnx')
   copyWindowsToolRuntime(resolveRuntimeTool('ffmpeg'), toolResourcesDir, ffmpegBinaryName)
   copyWindowsToolRuntime(resolveRuntimeTool('ffprobe'), toolResourcesDir, ffprobeBinaryName)
   normalizeBundledResource(toolResourcesDir)
 }
 
 function main() {
+  const requirementsFile = resolveRequirementsFile()
+  const buildContext = {
+    ...ensureBuildPython(requirementsFile),
+    requirementsFile
+  }
+
+  ensureOnnxModel(buildContext)
   copyRuntimeResources()
-  buildWorker()
+  buildWorker(buildContext)
   console.log('桌面 worker 和运行资源已更新到 src-tauri/resources')
 }
 

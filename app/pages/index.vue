@@ -60,7 +60,8 @@ const uploadForm = reactive({
   timeoutRatioDenominator: 4,
   enablePreprocessing: false,
   preprocessingStrength: 'moderate',
-  preprocessingEnhancePool: false
+  preprocessingEnhancePool: false,
+  enableDynamicMetrics: true
 })
 
 const statusOptions = [
@@ -400,7 +401,8 @@ const handleCreateTasks = async (autoStart: boolean) => {
         timeoutRatio,
         enablePreprocessing: uploadForm.enablePreprocessing,
         preprocessingStrength: uploadForm.preprocessingStrength,
-        preprocessingEnhancePool: uploadForm.preprocessingEnhancePool
+        preprocessingEnhancePool: uploadForm.preprocessingEnhancePool,
+        enableDynamicMetrics: uploadForm.enableDynamicMetrics
       },
       autoStart
     )
@@ -1018,6 +1020,28 @@ const handlePageChange = (page: number) => {
 
           <section class="space-y-4 rounded-xl border border-accented/70 bg-muted/20 p-4">
             <div class="space-y-1">
+              <h3 class="text-sm font-semibold text-highlighted">动态指标</h3>
+              <p class="text-xs text-muted">关闭后不计算亮度、熔池面积、周长和全局频率分析，可提升检测吞吐。</p>
+            </div>
+
+            <div class="space-y-3 rounded-lg border border-accented/60 bg-default/80 p-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <label
+                    class="block cursor-pointer text-sm font-medium"
+                    @click="uploadForm.enableDynamicMetrics = !uploadForm.enableDynamicMetrics"
+                  >
+                    启用动态指标
+                  </label>
+                  <p class="text-xs text-muted">关闭后任务详情不展示动态参数记录、全局频率分析和动态参数图表。</p>
+                </div>
+                <UCheckbox v-model="uploadForm.enableDynamicMetrics" />
+              </div>
+            </div>
+          </section>
+
+          <section class="space-y-4 rounded-xl border border-accented/70 bg-muted/20 p-4">
+            <div class="space-y-1">
               <h3 class="text-sm font-semibold text-highlighted">视频预处理</h3>
               <p class="text-xs text-muted">关闭时直接使用原视频，开启后才显示预处理相关参数。</p>
             </div>
@@ -1252,6 +1276,14 @@ const handlePageChange = (page: number) => {
               size="xs"
             >
               熔池增强
+            </UBadge>
+            <UBadge
+              v-if="row.original.config?.enableDynamicMetrics === false"
+              color="neutral"
+              variant="subtle"
+              size="xs"
+            >
+              动态指标关
             </UBadge>
           </div>
         </template>

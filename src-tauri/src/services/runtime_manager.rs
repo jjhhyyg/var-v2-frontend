@@ -87,7 +87,11 @@ fn validate_development_source_runtime(paths: &ControlPaths) -> anyhow::Result<(
         return Err(anyhow!("缺少 {}", script.display()));
     }
 
-    let model = ai_dir.join("weights").join("best.pt");
+    let model = if cfg!(target_os = "windows") {
+        ai_dir.join("weights").join("best.onnx")
+    } else {
+        ai_dir.join("weights").join("best.pt")
+    };
     if !model.exists() {
         return Err(anyhow!("缺少 {}", model.display()));
     }
@@ -164,7 +168,7 @@ pub(crate) fn validate_runtime_layout(root: &Path) -> anyhow::Result<()> {
         .join(bundled_binary_name("desktop_worker"));
     let ffmpeg = root.join("tools").join(bundled_binary_name("ffmpeg"));
     let ffprobe = root.join("tools").join(bundled_binary_name("ffprobe"));
-    let model = root.join("models").join("best.pt");
+    let model = root.join("models").join("best.onnx");
     for required in [worker, ffmpeg, ffprobe, model] {
         if !required.exists() {
             return Err(anyhow!("算法包缺少文件: {}", required.display()));
@@ -323,7 +327,19 @@ pub(crate) fn run_runtime_self_check(root: &Path) -> anyhow::Result<()> {
     let ffmpeg = root.join("tools").join(bundled_binary_name("ffmpeg"));
     let ffprobe = root.join("tools").join(bundled_binary_name("ffprobe"));
 
-    run_runtime_check(&worker, &["--self-check"], "desktop_worker --self-check")?;
+    let model = root.join("models").join("best.onnx");
+    let model_arg = model.to_string_lossy().to_string();
+    run_runtime_check(
+        &worker,
+        &[
+            "--self-check",
+            "--backend",
+            "onnx",
+            "--model",
+            model_arg.as_str(),
+        ],
+        "desktop_worker --self-check",
+    )?;
     run_runtime_check(&ffmpeg, &["-version"], "ffmpeg -version")?;
     run_runtime_check(&ffprobe, &["-version"], "ffprobe -version")?;
     Ok(())
@@ -333,6 +349,7 @@ pub(crate) fn run_runtime_check(path: &Path, args: &[&str], label: &str) -> anyh
     let mut command = Command::new(path);
     command
         .args(args)
+        .env("ONNX_REQUIRE_CUDA", "1")
         .env("ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

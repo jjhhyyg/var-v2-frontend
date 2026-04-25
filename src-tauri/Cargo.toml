@@ -1,6 +1,6 @@
 [package]
 name = "var-desktop"
-version = "0.1.4"
+version = "0.1.5"
 description = "VAR 熔池视频分析桌面端"
 authors = ["YANGYANG HOU"]
 edition = "2024"

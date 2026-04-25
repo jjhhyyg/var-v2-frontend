@@ -61,6 +61,7 @@ pub(crate) fn init_db(db_path: &Path, backup_dir: &Path) -> anyhow::Result<()> {
           enable_preprocessing INTEGER NOT NULL,
           preprocessing_strength TEXT NOT NULL,
           preprocessing_enhance_pool INTEGER NOT NULL,
+          enable_dynamic_metrics INTEGER NOT NULL DEFAULT 1,
           frame_rate REAL NOT NULL,
           FOREIGN KEY(task_id) REFERENCES analysis_tasks(id) ON DELETE CASCADE
         );
@@ -94,6 +95,7 @@ pub(crate) fn init_db(db_path: &Path, backup_dir: &Path) -> anyhow::Result<()> {
         "#,
     )?;
     ensure_queue_schema(&conn)?;
+    ensure_task_config_schema(&conn)?;
     repair_inconsistent_task_statuses(&conn)?;
     ensure_queue_orders_for_queued_tasks(&conn)?;
     Ok(())
@@ -116,6 +118,24 @@ pub(crate) fn repair_inconsistent_task_statuses(conn: &Connection) -> anyhow::Re
          WHERE status IN ('PREPROCESSING', 'ANALYZING')",
         params![now_string()],
     )?;
+    Ok(())
+}
+
+pub(crate) fn ensure_task_config_schema(conn: &Connection) -> anyhow::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(task_configs)")?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    let has_enable_dynamic_metrics = columns
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .any(|column| column == "enable_dynamic_metrics");
+
+    if !has_enable_dynamic_metrics {
+        conn.execute(
+            "ALTER TABLE task_configs ADD COLUMN enable_dynamic_metrics INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+    }
+
     Ok(())
 }
 

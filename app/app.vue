@@ -455,6 +455,15 @@ onUnmounted(() => {
         </UButton>
         <UButton
           v-if="appState?.initialized"
+          to="/monitor"
+          icon="i-lucide-activity"
+          color="neutral"
+          variant="ghost"
+        >
+          监控
+        </UButton>
+        <UButton
+          v-if="appState?.initialized"
           icon="i-lucide-sliders-horizontal"
           color="neutral"
           variant="ghost"

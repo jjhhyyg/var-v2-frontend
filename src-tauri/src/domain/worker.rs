@@ -25,6 +25,7 @@ pub(crate) struct WorkerJobConfig {
     pub(crate) enable_preprocessing: bool,
     pub(crate) preprocessing_strength: String,
     pub(crate) preprocessing_enhance_pool: bool,
+    pub(crate) enable_dynamic_metrics: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +64,13 @@ pub(crate) struct PerformancePayload {
     pub(crate) preprocessing_duration_seconds: i64,
     pub(crate) defect_detection_duration_seconds: i64,
     pub(crate) detection_backend: String,
+    pub(crate) timing_summary: Option<TimingSummaryData>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PerformanceTracePayload {
+    pub(crate) timing_summary: TimingSummaryData,
 }
 
 #[derive(Debug, Clone, Deserialize)]

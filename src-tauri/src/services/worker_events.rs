@@ -75,6 +75,12 @@ pub(crate) fn handle_worker_event(
             state.emit_detail(app, task_id);
             Ok(true)
         }
+        "performance_trace" => {
+            let payload: PerformanceTracePayload = serde_json::from_value(event.payload)?;
+            update_task_timing_summary(state, task_id, &payload.timing_summary)?;
+            state.emit_detail(app, task_id);
+            Ok(false)
+        }
         "failed" => {
             let message = event
                 .payload

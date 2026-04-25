@@ -26,14 +26,13 @@ pub(crate) fn run_task_worker(
     let log_path = worker_log_path(task_id);
     let job_path = task_dir.join("work").join("task-job.json");
 
+    let model_path = resolve_model_path(&state.paths)?;
     let job = WorkerJob {
         task_id,
         video_path: video_abs.to_string_lossy().to_string(),
         video_duration: loaded.response.video_duration,
         timeout_threshold: loaded.response.timeout_threshold,
-        model_path: resolve_model_path(&state.paths)?
-            .to_string_lossy()
-            .to_string(),
+        model_path: model_path.to_string_lossy().to_string(),
         device: String::new(),
         log_path: log_path.to_string_lossy().to_string(),
         preprocessed_output_path: preprocessed_output_path.to_string_lossy().to_string(),
@@ -46,6 +45,7 @@ pub(crate) fn run_task_worker(
             enable_preprocessing: config.enable_preprocessing,
             preprocessing_strength: config.preprocessing_strength,
             preprocessing_enhance_pool: config.preprocessing_enhance_pool,
+            enable_dynamic_metrics: config.enable_dynamic_metrics,
         },
     };
     cleanup_logs(LogNamespace::Worker)?;
@@ -75,7 +75,15 @@ pub(crate) fn run_task_worker(
     };
 
     command
-        .env("YOLO_MODEL_PATH", resolve_model_path(&state.paths)?)
+        .env("YOLO_MODEL_PATH", &model_path)
+        .env(
+            "ONNX_REQUIRE_CUDA",
+            if cfg!(target_os = "windows") {
+                "1"
+            } else {
+                "0"
+            },
+        )
         .env("ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS", "1")
         .env("FFMPEG_BIN", ffmpeg_path)
         .env("FFPROBE_BIN", ffprobe_path)

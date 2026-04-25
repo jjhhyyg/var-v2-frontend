@@ -6,6 +6,7 @@ pub(crate) fn default_task_config_input() -> TaskConfigInput {
         enable_preprocessing: Some(false),
         preprocessing_strength: Some("moderate".to_string()),
         preprocessing_enhance_pool: Some(false),
+        enable_dynamic_metrics: Some(true),
     }
 }
 
@@ -57,6 +58,7 @@ pub(crate) fn create_task_from_import(
     } else {
         false
     };
+    let enable_dynamic_metrics = config_input.enable_dynamic_metrics.unwrap_or(true);
     let timeout_threshold = parse_timeout_ratio(&timeout_ratio, info.duration_seconds)?;
 
     let mut conn = state.open_db()?;
@@ -78,14 +80,15 @@ pub(crate) fn create_task_from_import(
 
     tx.execute(
         "INSERT INTO task_configs (task_id, timeout_ratio, model_version, enable_preprocessing, preprocessing_strength,
-                                   preprocessing_enhance_pool, frame_rate)
-         VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6)",
+                                   preprocessing_enhance_pool, enable_dynamic_metrics, frame_rate)
+         VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7)",
         params![
             task_id,
             timeout_ratio,
             enable_preprocessing as i64,
             preprocessing_strength,
             preprocessing_enhance_pool as i64,
+            enable_dynamic_metrics as i64,
             info.frame_rate
         ],
     )?;

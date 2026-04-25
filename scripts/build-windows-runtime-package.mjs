@@ -91,7 +91,7 @@ function createRuntimeZip() {
   if (sevenZip) {
     run(
       sevenZip,
-      ['a', '-tzip', '-mx=0', '-mmt=on', '-r', packagePath, '.\\*'],
+      ['a', '-tzip', '-mx=9', '-mmt=on', '-r', packagePath, '.\\*'],
       { cwd: stagingRoot }
     )
     return
@@ -110,7 +110,7 @@ function main() {
   assertExists(join(runtimeSourceDir, 'worker', 'desktop_worker', 'desktop_worker.exe'), 'Windows worker')
   assertExists(join(runtimeSourceDir, 'tools', 'ffmpeg.exe'), 'ffmpeg.exe')
   assertExists(join(runtimeSourceDir, 'tools', 'ffprobe.exe'), 'ffprobe.exe')
-  assertExists(join(modelSourceDir, 'best.pt'), 'best.pt')
+  assertExists(join(modelSourceDir, 'best.onnx'), 'best.onnx')
 
   rmSync(stagingRoot, { recursive: true, force: true })
   mkdirSync(stagingRoot, { recursive: true })

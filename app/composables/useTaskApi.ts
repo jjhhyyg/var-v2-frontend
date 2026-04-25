@@ -9,6 +9,7 @@ export interface TaskConfig {
   enablePreprocessing?: boolean
   preprocessingStrength?: string
   preprocessingEnhancePool?: boolean
+  enableDynamicMetrics?: boolean
 }
 
 export interface Task {
@@ -110,6 +111,25 @@ export interface PerformanceInfo {
   preprocessingDurationSeconds: number
   defectDetectionDurationSeconds: number
   detectionBackend: string
+  timingSummary?: TimingSummary | null
+}
+
+export interface TimingSummary {
+  schemaVersion: number
+  totalMeasuredFrames: number
+  stages: TimingStage[]
+}
+
+export interface TimingStage {
+  key: string
+  label: string
+  samples: number
+  totalMs: number
+  avgMs: number
+  p50Ms: number
+  p95Ms: number
+  maxMs: number
+  percentOfMeasuredMs: number
 }
 
 export interface GlobalAnalysisMetric {

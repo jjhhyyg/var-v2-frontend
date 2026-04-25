@@ -29,6 +29,7 @@ pub(crate) struct TaskConfigData {
     pub(crate) enable_preprocessing: bool,
     pub(crate) preprocessing_strength: String,
     pub(crate) preprocessing_enhance_pool: bool,
+    pub(crate) enable_dynamic_metrics: bool,
     pub(crate) frame_rate: f64,
 }
 
@@ -81,6 +82,29 @@ pub(crate) struct PerformanceData {
     pub(crate) preprocessing_duration_seconds: i64,
     pub(crate) defect_detection_duration_seconds: i64,
     pub(crate) detection_backend: String,
+    pub(crate) timing_summary: Option<TimingSummaryData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TimingSummaryData {
+    pub(crate) schema_version: i64,
+    pub(crate) total_measured_frames: i64,
+    pub(crate) stages: Vec<TimingStageData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TimingStageData {
+    pub(crate) key: String,
+    pub(crate) label: String,
+    pub(crate) samples: i64,
+    pub(crate) total_ms: f64,
+    pub(crate) avg_ms: f64,
+    pub(crate) p50_ms: f64,
+    pub(crate) p95_ms: f64,
+    pub(crate) max_ms: f64,
+    pub(crate) percent_of_measured_ms: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

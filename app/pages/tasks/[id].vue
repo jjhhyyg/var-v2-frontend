@@ -40,6 +40,10 @@ const eventTypeMap: Record<string, string> = {
 }
 
 const progress = computed(() => (status.value?.progress ?? 0) * 100)
+const dynamicMetricsEnabled = computed(() => task.value?.config?.enableDynamicMetrics !== false)
+const hasDynamicMetrics = computed(() => dynamicMetricsEnabled.value && (result.value?.dynamicMetrics.length ?? 0) > 0)
+const globalAnalysis = computed(() => result.value?.globalAnalysis ?? null)
+const hasGlobalAnalysis = computed(() => dynamicMetricsEnabled.value && Boolean(globalAnalysis.value))
 
 const sourceFps = computed(() => {
   return result.value?.videoInfo.sourceVideoFps ?? task.value?.config?.frameRate ?? 25
@@ -294,6 +298,13 @@ onUnmounted(() => {
           >
             熔池增强
           </UBadge>
+          <UBadge
+            v-if="task.config.enableDynamicMetrics === false"
+            color="neutral"
+            variant="subtle"
+          >
+            动态指标关
+          </UBadge>
         </div>
 
         <div v-if="task.failureReason" class="mt-4 rounded-lg bg-red-50 p-4 dark:bg-red-900/20">
@@ -372,7 +383,7 @@ onUnmounted(() => {
             </div>
           </div>
         </UCard>
-        <UCard>
+        <UCard v-if="dynamicMetricsEnabled">
           <div class="flex items-center gap-4">
             <div class="rounded-lg bg-green-100 p-3 dark:bg-green-900/20">
               <UIcon name="i-lucide-activity" class="h-6 w-6 text-green-600 dark:text-green-400" />
@@ -434,51 +445,51 @@ onUnmounted(() => {
         />
       </UCard>
 
-      <UCard v-if="result && result.globalAnalysis">
+      <UCard v-if="result && hasGlobalAnalysis">
         <template #header>
           <h2 class="text-xl font-semibold">全局频率分析</h2>
         </template>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div
-            v-if="result.globalAnalysis['闪烁']"
+            v-if="globalAnalysis?.['闪烁']"
             class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/20"
           >
             <div class="mb-2 flex items-center gap-2">
               <UIcon name="i-lucide-zap" class="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
               <h3 class="font-semibold">闪烁频率</h3>
             </div>
-            <p class="mb-1 text-2xl font-bold">{{ result.globalAnalysis['闪烁'].frequency?.toFixed(3) }} Hz</p>
-            <p class="text-sm text-muted">趋势: {{ result.globalAnalysis['闪烁'].trend || '-' }}</p>
+            <p class="mb-1 text-2xl font-bold">{{ globalAnalysis['闪烁'].frequency?.toFixed(3) }} Hz</p>
+            <p class="text-sm text-muted">趋势: {{ globalAnalysis['闪烁'].trend || '-' }}</p>
           </div>
 
           <div
-            v-if="result.globalAnalysis['面积']"
+            v-if="globalAnalysis?.['面积']"
             class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20"
           >
             <div class="mb-2 flex items-center gap-2">
               <UIcon name="i-lucide-square" class="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <h3 class="font-semibold">面积振荡</h3>
             </div>
-            <p class="mb-1 text-2xl font-bold">{{ result.globalAnalysis['面积'].frequency?.toFixed(3) }} Hz</p>
-            <p class="text-sm text-muted">趋势: {{ result.globalAnalysis['面积'].trend || '-' }}</p>
+            <p class="mb-1 text-2xl font-bold">{{ globalAnalysis['面积'].frequency?.toFixed(3) }} Hz</p>
+            <p class="text-sm text-muted">趋势: {{ globalAnalysis['面积'].trend || '-' }}</p>
           </div>
 
           <div
-            v-if="result.globalAnalysis['周长']"
+            v-if="globalAnalysis?.['周长']"
             class="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20"
           >
             <div class="mb-2 flex items-center gap-2">
               <UIcon name="i-lucide-git-commit-horizontal" class="h-5 w-5 text-green-600 dark:text-green-400" />
               <h3 class="font-semibold">周长振荡</h3>
             </div>
-            <p class="mb-1 text-2xl font-bold">{{ result.globalAnalysis['周长'].frequency?.toFixed(3) }} Hz</p>
-            <p class="text-sm text-muted">趋势: {{ result.globalAnalysis['周长'].trend || '-' }}</p>
+            <p class="mb-1 text-2xl font-bold">{{ globalAnalysis['周长'].frequency?.toFixed(3) }} Hz</p>
+            <p class="text-sm text-muted">趋势: {{ globalAnalysis['周长'].trend || '-' }}</p>
           </div>
         </div>
       </UCard>
 
-      <UCard v-if="result && result.dynamicMetrics.length > 0">
+      <UCard v-if="result && hasDynamicMetrics">
         <template #header>
           <div class="flex flex-wrap items-center justify-between gap-4">
             <h2 class="text-xl font-semibold">动态参数变化</h2>

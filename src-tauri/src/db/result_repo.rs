@@ -89,6 +89,45 @@ pub(crate) fn persist_result_payload(
     Ok(())
 }
 
+pub(crate) fn update_task_timing_summary(
+    state: &DesktopState,
+    task_id: i64,
+    timing_summary: &TimingSummaryData,
+) -> anyhow::Result<()> {
+    let conn = state.open_db()?;
+    let performance_raw: Option<String> = conn
+        .query_row(
+            "SELECT performance_json FROM analysis_tasks WHERE id = ?1",
+            params![task_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+
+    let mut performance_value = performance_raw
+        .as_deref()
+        .and_then(|value| serde_json::from_str::<Value>(value).ok())
+        .unwrap_or_else(|| json!({}));
+
+    if !performance_value.is_object() {
+        performance_value = json!({});
+    }
+
+    if let Value::Object(object) = &mut performance_value {
+        object.insert(
+            "timingSummary".to_string(),
+            serde_json::to_value(timing_summary)?,
+        );
+    }
+
+    conn.execute(
+        "UPDATE analysis_tasks SET performance_json = ?1 WHERE id = ?2",
+        params![performance_value.to_string(), task_id],
+    )?;
+
+    Ok(())
+}
+
 pub(crate) fn load_task_result(
     conn: &mut Connection,
     task_id: i64,
