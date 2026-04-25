@@ -14,6 +14,8 @@
     "desktop:build-worker": "node scripts/build-desktop-worker.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
+    "desktop:windows:runtime": "npm run desktop:build-worker && node scripts/build-windows-runtime-package.mjs",
+    "desktop:windows:build": "tauri build --config src-tauri/tauri.windows.conf.json --bundles nsis",
     "desktop:macos:preflight": "node scripts/macos-release.mjs --preflight",
     "desktop:macos:verify": "node scripts/macos-release.mjs --verify",
     "desktop:macos:ad-hoc": "node scripts/macos-release.mjs --build --allow-adhoc",
@@ -36,7 +38,7 @@
     "chart.js": "^4.5.0",
     "echarts": "^6.0.0",
     "html2canvas": "^1.4.1",
-    "jspdf": "^3.0.3",
+    "jspdf": "^4.2.1",
     "nuxt": "^4.4.2",
     "vue-echarts": "^8.0.0"
   },

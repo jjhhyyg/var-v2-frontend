@@ -14,18 +14,18 @@ export default defineNuxtConfig({
     transpile: ['echarts', 'vue-echarts']
   },
 
-  vite: {
-    optimizeDeps: {
-      include: ['jspdf']
-    }
-  },
-
   // routeRules: {
   //   '/': { ssr: false },
   //   '/tasks/**': { ssr: false }
   // },
 
   compatibilityDate: '2025-01-15',
+
+  vite: {
+    optimizeDeps: {
+      include: ['jspdf']
+    }
+  },
 
   eslint: {
     config: {

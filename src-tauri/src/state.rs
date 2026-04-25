@@ -32,7 +32,12 @@ pub(crate) struct RuntimeState {
 
 pub(crate) struct ResourceProbe {
     pub(crate) system: System,
+    pub(crate) last_gpu_probe_warning_at: Option<Instant>,
 }
+
+const GPU_PROBE_TIMEOUT: Duration = Duration::from_millis(800);
+const GPU_PROBE_WARNING_INTERVAL: Duration = Duration::from_secs(60);
+const MIB_BYTES: u64 = 1024 * 1024;
 impl DesktopState {
     pub(crate) fn bootstrap(app: &AppHandle) -> anyhow::Result<Self> {
         let paths = build_control_paths(app)?;
@@ -118,6 +123,11 @@ impl DesktopState {
         }
     }
 
+    pub(crate) fn emit_resource_state(&self, app: &AppHandle) {
+        let payload = self.resource_state_response();
+        let _ = app.emit("resource-state-update", payload);
+    }
+
     pub(crate) fn register_media_token(&self, path: PathBuf) -> String {
         self.prune_media_tokens();
         let token = Uuid::new_v4().to_string();
@@ -166,10 +176,52 @@ impl DesktopState {
         })
     }
 
+    pub(crate) fn resource_state_response(&self) -> ResourceStateResponse {
+        let snapshot = self.runtime.resource_probe.lock().snapshot();
+        ResourceStateResponse {
+            cpu_percent: clamp_percent(snapshot.cpu_percent),
+            memory_used_percent: memory_used_percent(
+                snapshot.available_memory_bytes,
+                snapshot.total_memory_bytes,
+            ),
+            gpu_percent: snapshot.gpu_percent.map(clamp_percent),
+            gpu_memory_used_percent: gpu_memory_used_percent(
+                snapshot.gpu_memory_used_bytes,
+                snapshot.gpu_memory_total_bytes,
+            ),
+        }
+    }
+
     pub(crate) fn load_task_response(&self, task_id: i64) -> anyhow::Result<TaskResponse> {
         let mut conn = self.open_db()?;
         load_task_response(&mut conn, task_id)
     }
+}
+
+fn clamp_percent(value: f64) -> f64 {
+    value.clamp(0.0, 100.0)
+}
+
+fn memory_used_percent(available_bytes: u64, total_bytes: u64) -> f64 {
+    if total_bytes == 0 {
+        return 0.0;
+    }
+
+    let used_ratio = 1.0 - (available_bytes as f64 / total_bytes as f64);
+    clamp_percent(used_ratio * 100.0)
+}
+
+fn gpu_memory_used_percent(used_bytes: Option<u64>, total_bytes: Option<u64>) -> Option<f64> {
+    let (Some(used_bytes), Some(total_bytes)) = (used_bytes, total_bytes) else {
+        return None;
+    };
+    if total_bytes == 0 {
+        return None;
+    }
+
+    Some(clamp_percent(
+        used_bytes as f64 / total_bytes as f64 * 100.0,
+    ))
 }
 
 impl ResourceProbe {
@@ -178,19 +230,48 @@ impl ResourceProbe {
         std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
         system.refresh_cpu_usage();
         system.refresh_memory();
-        Self { system }
+        Self {
+            system,
+            last_gpu_probe_warning_at: None,
+        }
     }
 
     pub(crate) fn snapshot(&mut self) -> ResourceSnapshot {
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
-        ResourceSnapshot {
+        let mut snapshot = ResourceSnapshot {
             cpu_percent: self.system.global_cpu_usage() as f64,
             available_memory_bytes: self.system.available_memory(),
             total_memory_bytes: self.system.total_memory(),
             gpu_percent: None,
             gpu_memory_used_bytes: None,
             gpu_memory_total_bytes: None,
+        };
+
+        if cfg!(target_os = "windows") {
+            match probe_windows_gpu() {
+                Ok(gpu) => {
+                    snapshot.gpu_percent = Some(gpu.percent);
+                    snapshot.gpu_memory_used_bytes = Some(gpu.memory_used_bytes);
+                    snapshot.gpu_memory_total_bytes = Some(gpu.memory_total_bytes);
+                    self.last_gpu_probe_warning_at = None;
+                }
+                Err(error) => self.log_gpu_probe_failure(&error),
+            }
+        }
+
+        snapshot
+    }
+
+    fn log_gpu_probe_failure(&mut self, error: &anyhow::Error) {
+        let now = Instant::now();
+        let should_log = self
+            .last_gpu_probe_warning_at
+            .map(|last| now.duration_since(last) >= GPU_PROBE_WARNING_INTERVAL)
+            .unwrap_or(true);
+        if should_log {
+            backend_log_info(format!("Windows GPU probe unavailable: {error}"));
+            self.last_gpu_probe_warning_at = Some(now);
         }
     }
 }
@@ -203,6 +284,101 @@ pub(crate) struct ResourceSnapshot {
     pub(crate) gpu_percent: Option<f64>,
     pub(crate) gpu_memory_used_bytes: Option<u64>,
     pub(crate) gpu_memory_total_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GpuProbeSnapshot {
+    pub(crate) percent: f64,
+    pub(crate) memory_used_bytes: u64,
+    pub(crate) memory_total_bytes: u64,
+}
+
+pub(crate) fn parse_nvidia_smi_csv(raw: &str) -> anyhow::Result<GpuProbeSnapshot> {
+    let line = raw
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| anyhow!("nvidia-smi 输出为空"))?;
+    let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+    if parts.len() != 3 {
+        return Err(anyhow!("nvidia-smi 输出列数无效: {line}"));
+    }
+
+    let percent = parts[0]
+        .parse::<f64>()
+        .with_context(|| format!("GPU 利用率无效: {}", parts[0]))?;
+    let memory_used_mib = parts[1]
+        .parse::<u64>()
+        .with_context(|| format!("已用显存无效: {}", parts[1]))?;
+    let memory_total_mib = parts[2]
+        .parse::<u64>()
+        .with_context(|| format!("总显存无效: {}", parts[2]))?;
+    if memory_total_mib == 0 {
+        return Err(anyhow!("总显存不能为 0"));
+    }
+
+    Ok(GpuProbeSnapshot {
+        percent,
+        memory_used_bytes: memory_used_mib.saturating_mul(MIB_BYTES),
+        memory_total_bytes: memory_total_mib.saturating_mul(MIB_BYTES),
+    })
+}
+
+fn probe_windows_gpu() -> anyhow::Result<GpuProbeSnapshot> {
+    let mut errors = Vec::new();
+    for binary in nvidia_smi_candidates() {
+        match query_nvidia_smi(&binary).and_then(|raw| parse_nvidia_smi_csv(&raw)) {
+            Ok(snapshot) => return Ok(snapshot),
+            Err(error) => errors.push(format!("{}: {error}", binary.display())),
+        }
+    }
+
+    Err(anyhow!(errors.join("; ")))
+}
+
+fn nvidia_smi_candidates() -> Vec<PathBuf> {
+    vec![
+        PathBuf::from("nvidia-smi.exe"),
+        PathBuf::from(r"C:\Windows\System32\nvidia-smi.exe"),
+    ]
+}
+
+fn query_nvidia_smi(binary: &Path) -> anyhow::Result<String> {
+    let mut command = Command::new(binary);
+    command
+        .arg("--id=0")
+        .arg("--query-gpu=utilization.gpu,memory.used,memory.total")
+        .arg("--format=csv,noheader,nounits")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    suppress_command_window(&mut command);
+
+    let mut child = command
+        .spawn()
+        .with_context(|| format!("无法启动 {}", binary.display()))?;
+    let started_at = Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            let output = child.wait_with_output()?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(anyhow!(
+                    "nvidia-smi 退出失败: {}; {}",
+                    output.status,
+                    stderr.trim()
+                ));
+            }
+            return String::from_utf8(output.stdout).context("nvidia-smi 输出不是 UTF-8");
+        }
+
+        if started_at.elapsed() >= GPU_PROBE_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(anyhow!("nvidia-smi 超时"));
+        }
+
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 pub(crate) fn build_control_paths(app: &AppHandle) -> anyhow::Result<ControlPaths> {
@@ -218,10 +394,14 @@ pub(crate) fn build_control_paths(app: &AppHandle) -> anyhow::Result<ControlPath
     let db_path = db_dir.join("app.sqlite3");
     let db_backup_dir = app_local_data_dir.join("backups").join("db");
     let log_dir = app_local_data_dir.join("logs");
-    let runtime_cache_dir = app_local_data_dir
-        .join("runtime")
-        .join(APP_VERSION)
-        .join(runtime_build_id());
+    let runtime_cache_dir = if cfg!(target_os = "windows") {
+        app_local_data_dir.join("runtime")
+    } else {
+        app_local_data_dir
+            .join("runtime")
+            .join(APP_VERSION)
+            .join(runtime_build_id())
+    };
 
     Ok(ControlPaths {
         app_config_dir,
@@ -261,4 +441,38 @@ pub(crate) fn ensure_control_dirs(paths: &ControlPaths) -> anyhow::Result<()> {
     fs::create_dir_all(paths.log_dir.join("worker"))?;
     fs::create_dir_all(&paths.runtime_cache_dir)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_nvidia_smi_csv() {
+        let snapshot = parse_nvidia_smi_csv("42, 1024, 8192\n").unwrap();
+
+        assert_eq!(snapshot.percent, 42.0);
+        assert_eq!(snapshot.memory_used_bytes, 1024 * MIB_BYTES);
+        assert_eq!(snapshot.memory_total_bytes, 8192 * MIB_BYTES);
+    }
+
+    #[test]
+    fn parses_nvidia_smi_csv_with_spaces() {
+        let snapshot = parse_nvidia_smi_csv(" 7 , 512 , 4096 \r\n").unwrap();
+
+        assert_eq!(snapshot.percent, 7.0);
+        assert_eq!(snapshot.memory_used_bytes, 512 * MIB_BYTES);
+        assert_eq!(snapshot.memory_total_bytes, 4096 * MIB_BYTES);
+    }
+
+    #[test]
+    fn rejects_invalid_nvidia_smi_csv() {
+        assert!(parse_nvidia_smi_csv("not,a,number").is_err());
+        assert!(parse_nvidia_smi_csv("42,1024").is_err());
+    }
+
+    #[test]
+    fn rejects_zero_total_gpu_memory() {
+        assert!(parse_nvidia_smi_csv("42, 0, 0").is_err());
+    }
 }

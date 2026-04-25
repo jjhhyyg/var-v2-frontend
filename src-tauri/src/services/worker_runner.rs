@@ -70,6 +70,7 @@ pub(crate) fn run_task_worker(
         } => {
             let mut command = Command::new(python);
             command.arg(script).arg(&job_path);
+            command.current_dir(&python_path);
             command.env("PYTHONPATH", python_path);
             command
         }
@@ -88,7 +89,13 @@ pub(crate) fn run_task_worker(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = command.spawn().context("启动桌面 worker 失败")?;
+    suppress_command_window(&mut command);
+    let mut child = command.spawn().with_context(|| {
+        format!(
+            "启动桌面 worker 失败，请检查 Python/worker 可执行文件是否可用: {:?}",
+            command.get_program()
+        )
+    })?;
     let stdout = child.stdout.take().context("worker stdout 不可用")?;
     let stderr = child.stderr.take().context("worker stderr 不可用")?;
 

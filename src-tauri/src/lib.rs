@@ -19,6 +19,7 @@ pub(crate) use parking_lot::{Mutex, RwLock};
 pub(crate) use rusqlite::{params, Connection, OptionalExtension};
 pub(crate) use serde::{Deserialize, Serialize};
 pub(crate) use serde_json::{json, Value};
+pub(crate) use sha2::{Digest, Sha256};
 pub(crate) use sysinfo::System;
 pub(crate) use tauri::{AppHandle, Emitter, Manager, State};
 pub(crate) use tower::ServiceExt;
@@ -52,6 +53,18 @@ pub(crate) const MEDIA_EVENT_TTL_MINUTES: u64 = 10;
 
 pub(crate) type CommandResult<T> = Result<T, String>;
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+pub(crate) fn suppress_command_window(command: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -71,6 +84,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::get_app_state,
+            commands::app::get_resource_state,
+            commands::app::request_app_exit,
             commands::library::initialize_media_library,
             commands::library::select_existing_media_library,
             commands::library::migrate_media_library,
@@ -89,7 +104,9 @@ pub fn run() {
             commands::report::export_report_file,
             commands::scheduler::update_scheduler_settings,
             commands::scheduler::get_queue_recovery_state,
-            commands::scheduler::resolve_queue_recovery
+            commands::scheduler::resolve_queue_recovery,
+            commands::runtime::get_runtime_state,
+            commands::runtime::import_runtime_zip
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

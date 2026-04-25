@@ -20,6 +20,30 @@ npm run desktop:dev
 npm run typecheck
 ```
 
+Windows 本地 CUDA worker 环境建议使用 conda：
+
+```powershell
+conda create -n var-env -y python=3.12
+conda install -n var-env -y pytorch torchvision pytorch-cuda=12.4 -c pytorch -c nvidia
+conda install -n var-env -y ffmpeg
+conda run -n var-env python -m pip install -r ../ai-processor/requirements-desktop-windows-cuda.txt "pyinstaller>=6.0.0"
+```
+
+模型文件需放在：
+
+```text
+../ai-processor/weights/best.pt
+```
+
+Windows 打包分两步：
+
+```powershell
+npm run desktop:windows:runtime
+npm run desktop:windows:build
+```
+
+`desktop:windows:runtime` 生成 CUDA 算法包 zip；`desktop:windows:build` 生成不内置 CUDA runtime 的 NSIS 主程序安装包。首次启动或版本不匹配时，Windows App 会要求导入匹配的算法包 zip。
+
 macOS 发布命令必须从 `frontend/` 目录运行：
 
 ```bash
@@ -39,10 +63,13 @@ npm run desktop:macos:release-public
 - `app/composables/useTauriEvents.ts`：Tauri 任务状态和详情事件订阅封装
 - `src-tauri/src/lib.rs`：桌面端数据库、队列调度、worker 管理、文件管理
 - `scripts/macos-release.mjs`：macOS 发布编排
+- `scripts/build-windows-runtime-package.mjs`：Windows CUDA Runtime zip 生成
 
 ## 打包资源规则
 
 `src-tauri/resources/runtime/` 和 `src-tauri/resources/models/` 是 `npm run desktop:build-worker` 生成的打包资源，不提交到 Git。源码仓只保留 `src-tauri/resources/placeholder.txt` 维持目录结构。
+
+macOS 发布脚本会继续把 runtime 资源打进发布产物。Windows NSIS 安装包使用 `src-tauri/tauri.windows.conf.json` 排除完整 CUDA runtime，算法包通过单独 zip 导入。
 
 ## 图标约束
 

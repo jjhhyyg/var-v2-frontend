@@ -1,4 +1,4 @@
-use crate::commands::app::get_app_state;
+use crate::commands::app::build_app_state_response;
 use crate::*;
 
 #[tauri::command]
@@ -27,12 +27,24 @@ pub(crate) fn update_scheduler_settings(
             }
             settings.scheduler.mac_min_available_memory_ratio = memory_ratio;
         }
+        if let Some(gpu_limit) = request.windows_gpu_limit_percent {
+            if !(1.0..=100.0).contains(&gpu_limit) {
+                return Err("GPU 阈值必须在 1 到 100 之间".to_string());
+            }
+            settings.scheduler.windows_gpu_limit_percent = gpu_limit;
+        }
+        if let Some(gpu_memory_ratio) = request.windows_min_available_gpu_memory_ratio {
+            if !(0.0..=1.0).contains(&gpu_memory_ratio) {
+                return Err("剩余显存阈值必须在 0 到 1 之间".to_string());
+            }
+            settings.scheduler.windows_min_available_gpu_memory_ratio = gpu_memory_ratio;
+        }
     }
 
     state.save_settings().map_err(|error| error.to_string())?;
     state.emit_scheduler_state(&app);
     try_schedule_tasks(&state, &app).map_err(|error| error.to_string())?;
-    get_app_state(state)
+    build_app_state_response(&state, Some(&app))
 }
 
 #[tauri::command]

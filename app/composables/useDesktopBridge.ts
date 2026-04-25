@@ -91,6 +91,26 @@ export const useDesktopBridge = () => {
     return selected
   }
 
+  const pickRuntimeZip = async (): Promise<string | null> => {
+    ensureTauri()
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        {
+          name: '算法包',
+          extensions: ['zip']
+        }
+      ]
+    })
+
+    if (!selected || Array.isArray(selected)) {
+      return null
+    }
+
+    return selected
+  }
+
   const pickSavePath = async (defaultPath?: string, filters?: Array<{ name: string, extensions: string[] }>): Promise<string | null> => {
     ensureTauri()
     const selected = await save({
@@ -123,6 +143,10 @@ export const useDesktopBridge = () => {
     await getCurrentWindow().close()
   }
 
+  const requestAppExit = async (force = false): Promise<void> => {
+    await invokeCommand<unknown>('request_app_exit', { force })
+  }
+
   return {
     isTauriApp: isTauriApp(),
     invokeCommand,
@@ -130,9 +154,11 @@ export const useDesktopBridge = () => {
     pickVideoFile,
     pickVideoFiles,
     pickDirectory,
+    pickRuntimeZip,
     pickSavePath,
     listenDragDrop,
     listenWindowCloseRequested,
-    closeCurrentWindow
+    closeCurrentWindow,
+    requestAppExit
   }
 }

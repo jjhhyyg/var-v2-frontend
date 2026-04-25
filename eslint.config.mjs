@@ -22,6 +22,7 @@ export default withNuxt({
     '**/src-tauri/target/**',
     '**/src-tauri/resources/runtime/**',
     '**/src-tauri/resources/models/**',
+    '**/.windows-runtime-package/**',
     '**/.tauri-worker-build/**',
     '**/.desktop-worker-venv/**'
   ]

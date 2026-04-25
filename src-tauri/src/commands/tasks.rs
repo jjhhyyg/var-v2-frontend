@@ -1,6 +1,6 @@
 use crate::*;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn import_video_task(
     request: ImportTaskRequest,
     state: State<DesktopState>,
@@ -9,7 +9,7 @@ pub(crate) fn import_video_task(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn import_video_tasks(
     request: ImportTasksRequest,
     app: AppHandle,
@@ -77,7 +77,7 @@ pub(crate) fn import_video_tasks(
         queued_task_ids,
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn list_tasks(
     request: ListTasksRequest,
     state: State<DesktopState>,
@@ -85,7 +85,7 @@ pub(crate) fn list_tasks(
     let mut conn = state.open_db().map_err(|error| error.to_string())?;
     list_task_page(&mut conn, &request).map_err(|error| error.to_string())
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_task(task_id: String, state: State<DesktopState>) -> CommandResult<TaskResponse> {
     let task_id = task_id.parse::<i64>().map_err(|error| error.to_string())?;
     state
@@ -93,7 +93,7 @@ pub(crate) fn get_task(task_id: String, state: State<DesktopState>) -> CommandRe
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_task_status(
     task_id: String,
     state: State<DesktopState>,
@@ -121,7 +121,7 @@ pub(crate) fn get_task_status(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_task_result(
     task_id: String,
     state: State<DesktopState>,
@@ -131,7 +131,7 @@ pub(crate) fn get_task_result(
     load_task_result(&mut conn, task_id).map_err(|error| error.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn start_task(
     task_id: String,
     app: AppHandle,
@@ -142,7 +142,7 @@ pub(crate) fn start_task(
     Ok("任务已加入分析队列".to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn dequeue_task(
     task_id: String,
     app: AppHandle,
@@ -178,7 +178,7 @@ pub(crate) fn dequeue_task(
     Ok("任务已移出分析队列".to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn reanalyze_task(
     task_id: String,
     app: AppHandle,
@@ -213,7 +213,7 @@ pub(crate) fn reanalyze_task(
     Ok("任务已重新进入分析队列".to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn delete_task(
     task_id: String,
     app: AppHandle,
@@ -247,7 +247,7 @@ pub(crate) fn delete_task(
     Ok("任务删除成功".to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn delete_tasks(
     request: DeleteTasksRequest,
     app: AppHandle,
@@ -322,7 +322,7 @@ pub(crate) fn delete_tasks(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_video_stream_url(
     task_id: String,
     video_type: String,

@@ -40,6 +40,7 @@ function bundledExecutableName(name) {
 function runCommand(cmd, args, options = {}) {
   const result = spawnSync(cmd, args, {
     stdio: 'inherit',
+    windowsHide: true,
     ...options
   })
 
@@ -76,7 +77,7 @@ function resolvePythonCommand() {
 }
 
 function requireCommand(cmd, args = ['--version']) {
-  const result = spawnSync(cmd, args, { stdio: 'pipe' })
+  const result = spawnSync(cmd, args, { stdio: 'pipe', windowsHide: true })
   return result.status === 0
 }
 
@@ -86,6 +87,30 @@ function copyFileIfExists(source, targetDir, targetName) {
   }
   ensureDir(targetDir)
   cpSync(realpathSync(source), join(targetDir, targetName))
+}
+
+function copyWindowsToolRuntime(source, targetDir, targetName) {
+  copyFileIfExists(source, targetDir, targetName)
+  if (process.platform !== 'win32') {
+    return
+  }
+
+  const sourceDir = dirname(realpathSync(source))
+  const normalizedSourceDir = sourceDir.replaceAll('\\', '/').toLowerCase()
+  if (!normalizedSourceDir.endsWith('/library/bin')) {
+    return
+  }
+
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.dll')) {
+      continue
+    }
+
+    const targetDll = join(targetDir, entry.name)
+    if (!existsSync(targetDll)) {
+      cpSync(join(sourceDir, entry.name), targetDll, { dereference: true })
+    }
+  }
 }
 
 function normalizeBundledResource(targetPath) {
@@ -103,19 +128,95 @@ function normalizeBundledResource(targetPath) {
 
 function resolveWhich(binary) {
   const locator = process.platform === 'win32' ? 'where' : 'which'
-  const result = spawnSync(locator, [binary], { encoding: 'utf-8' })
+  const result = spawnSync(locator, [binary], { encoding: 'utf-8', windowsHide: true })
   if (result.status !== 0) {
     throw new Error(`未找到系统命令: ${binary}`)
   }
   return result.stdout.trim().split(/\r?\n/)[0]
 }
 
+function resolveCondaCommand() {
+  if (requireCommand('conda')) {
+    return 'conda'
+  }
+
+  if (process.platform !== 'win32') {
+    return null
+  }
+
+  const userProfile = process.env.USERPROFILE
+  const candidates = [
+    process.env.CONDA_EXE,
+    userProfile ? join(userProfile, 'anaconda3', 'Scripts', 'conda.exe') : null,
+    userProfile ? join(userProfile, 'anaconda3', 'condabin', 'conda.bat') : null,
+    userProfile ? join(userProfile, 'miniconda3', 'Scripts', 'conda.exe') : null,
+    userProfile ? join(userProfile, 'miniconda3', 'condabin', 'conda.bat') : null
+  ].filter(Boolean)
+
+  return candidates.find(candidate => existsSync(candidate)) ?? null
+}
+
+function resolveCondaEnvPrefix(envName) {
+  const conda = resolveCondaCommand()
+  if (!conda) {
+    return null
+  }
+
+  const result = spawnSync(conda, ['env', 'list', '--json'], { encoding: 'utf-8', windowsHide: true })
+  if (result.status !== 0) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout)
+    return parsed.envs
+      ?.find(envPath => envPath.split(/[\\/]/).at(-1) === envName) ?? null
+  } catch {
+    return null
+  }
+}
+
+function resolveRuntimeTool(binary) {
+  try {
+    return resolveWhich(binary)
+  } catch (error) {
+    if (process.platform !== 'win32') {
+      throw error
+    }
+
+    const condaEnvName = process.env.TAURI_WORKER_CONDA_ENV ?? 'var-env'
+    const envPrefix = process.env.CONDA_PREFIX ?? resolveCondaEnvPrefix(condaEnvName)
+    const binaryName = bundledExecutableName(binary)
+    const candidates = [
+      envPrefix ? join(envPrefix, 'Library', 'bin', binaryName) : null,
+      envPrefix ? join(envPrefix, 'Scripts', binaryName) : null
+    ].filter(Boolean)
+    const resolved = candidates.find(candidate => existsSync(candidate))
+
+    if (resolved) {
+      return resolved
+    }
+
+    throw error
+  }
+}
+
 function resolveRequirementsFile() {
+  const explicitRequirementsFile = process.env.TAURI_WORKER_REQUIREMENTS
+  if (explicitRequirementsFile) {
+    return resolve(explicitRequirementsFile)
+  }
+
   if (process.platform === 'darwin') {
     return join(aiDir, 'requirements-desktop-macos.txt')
   }
 
   if (process.platform === 'win32') {
+    const cudaRequirements = join(aiDir, 'requirements-desktop-windows-cuda.txt')
+    if (existsSync(cudaRequirements)) {
+      return cudaRequirements
+    }
+
     return join(aiDir, 'requirements-desktop-windows-cpu.txt')
   }
 
@@ -123,15 +224,17 @@ function resolveRequirementsFile() {
 }
 
 function resolveCondaPythonPath(envName) {
-  if (!requireCommand('conda')) {
+  const conda = resolveCondaCommand()
+  if (!conda) {
     return null
   }
 
   const result = spawnSync(
-    'conda',
+    conda,
     ['run', '-n', envName, 'python', '-c', 'import sys; print(sys.executable)'],
     {
-      encoding: 'utf-8'
+      encoding: 'utf-8',
+      windowsHide: true
     }
   )
 
@@ -167,7 +270,8 @@ function modulesReady(python) {
       'import PyInstaller, cv2, torch, ultralytics, dotenv, numpy, scipy, PIL, lap'
     ],
     {
-      stdio: 'pipe'
+      stdio: 'pipe',
+      windowsHide: true
     }
   )
 
@@ -182,7 +286,8 @@ function ensureNoBackportPathlib(python) {
       'import sys, glob, os; matches=[]; [matches.extend(glob.glob(os.path.join(path, "pathlib.py"))) for path in sys.path if "site-packages" in path]; print(matches[0] if matches else "")'
     ],
     {
-      encoding: 'utf-8'
+      encoding: 'utf-8',
+      windowsHide: true
     }
   )
 
@@ -376,6 +481,7 @@ function buildWorker() {
     ],
     {
       stdio: 'inherit',
+      windowsHide: true,
       cwd: aiDir,
       env: {
         ...process.env,
@@ -413,8 +519,8 @@ function copyRuntimeResources() {
   const ffprobeBinaryName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
 
   copyFileIfExists(join(aiDir, 'weights', 'best.pt'), modelResourcesDir, 'best.pt')
-  copyFileIfExists(resolveWhich('ffmpeg'), toolResourcesDir, ffmpegBinaryName)
-  copyFileIfExists(resolveWhich('ffprobe'), toolResourcesDir, ffprobeBinaryName)
+  copyWindowsToolRuntime(resolveRuntimeTool('ffmpeg'), toolResourcesDir, ffmpegBinaryName)
+  copyWindowsToolRuntime(resolveRuntimeTool('ffprobe'), toolResourcesDir, ffprobeBinaryName)
   normalizeBundledResource(toolResourcesDir)
 }
 

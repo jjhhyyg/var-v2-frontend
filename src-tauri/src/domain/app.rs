@@ -10,10 +10,63 @@ pub(crate) struct AppStateResponse {
     pub(crate) max_concurrency: usize,
     pub(crate) mac_cpu_limit_percent: f64,
     pub(crate) mac_min_available_memory_ratio: f64,
+    pub(crate) windows_gpu_limit_percent: f64,
+    pub(crate) windows_min_available_gpu_memory_ratio: f64,
     pub(crate) active_task_count: usize,
     pub(crate) queued_task_count: usize,
     pub(crate) platform: String,
     pub(crate) version: String,
+    pub(crate) runtime_required: bool,
+    pub(crate) runtime_ready: bool,
+    pub(crate) runtime_build_id: Option<String>,
+    pub(crate) required_runtime_build_id: String,
+    pub(crate) runtime_platform: String,
+    pub(crate) runtime_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeStateResponse {
+    pub(crate) runtime_required: bool,
+    pub(crate) runtime_ready: bool,
+    pub(crate) runtime_build_id: Option<String>,
+    pub(crate) required_runtime_build_id: String,
+    pub(crate) runtime_platform: String,
+    pub(crate) runtime_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ResourceStateResponse {
+    pub(crate) cpu_percent: f64,
+    pub(crate) memory_used_percent: f64,
+    pub(crate) gpu_percent: Option<f64>,
+    pub(crate) gpu_memory_used_percent: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImportRuntimeRequest {
+    pub(crate) path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeManifest {
+    pub(crate) platform: String,
+    pub(crate) runtime_build_id: String,
+    pub(crate) app_version: String,
+    pub(crate) created_at: String,
+    #[serde(default)]
+    pub(crate) files: Vec<RuntimeManifestFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeManifestFile {
+    pub(crate) path: String,
+    pub(crate) size: u64,
+    pub(crate) sha256: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -95,6 +148,8 @@ pub(crate) struct SchedulerSettingsInput {
     pub(crate) max_concurrency: Option<usize>,
     pub(crate) mac_cpu_limit_percent: Option<f64>,
     pub(crate) mac_min_available_memory_ratio: Option<f64>,
+    pub(crate) windows_gpu_limit_percent: Option<f64>,
+    pub(crate) windows_min_available_gpu_memory_ratio: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

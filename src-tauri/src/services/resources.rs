@@ -213,6 +213,16 @@ pub(crate) fn ensure_runtime_directory(
 
 pub(crate) fn resolve_ffmpeg_path(paths: &ControlPaths) -> PathBuf {
     let binary = bundled_binary_name("ffmpeg");
+    if cfg!(target_os = "windows") {
+        let path = windows_active_runtime_dir(paths)
+            .join("tools")
+            .join(&binary);
+        if path.exists() {
+            return path;
+        }
+        return PathBuf::from(binary);
+    }
+
     ensure_runtime_file(
         paths,
         &["tools", binary.as_str()],
@@ -224,6 +234,16 @@ pub(crate) fn resolve_ffmpeg_path(paths: &ControlPaths) -> PathBuf {
 
 pub(crate) fn resolve_ffprobe_path(paths: &ControlPaths) -> PathBuf {
     let binary = bundled_binary_name("ffprobe");
+    if cfg!(target_os = "windows") {
+        let path = windows_active_runtime_dir(paths)
+            .join("tools")
+            .join(&binary);
+        if path.exists() {
+            return path;
+        }
+        return PathBuf::from(binary);
+    }
+
     ensure_runtime_file(
         paths,
         &["tools", binary.as_str()],
@@ -234,6 +254,24 @@ pub(crate) fn resolve_ffprobe_path(paths: &ControlPaths) -> PathBuf {
 }
 
 pub(crate) fn resolve_model_path(paths: &ControlPaths) -> anyhow::Result<PathBuf> {
+    if cfg!(debug_assertions) {
+        let repo_root = workspace_root_from_resource_dir(&paths.resource_dir);
+        let dev_model = repo_root.join("ai-processor").join("weights").join("best.pt");
+        if dev_model.exists() {
+            return Ok(dev_model);
+        }
+    }
+
+    if cfg!(target_os = "windows") {
+        let path = windows_active_runtime_dir(paths)
+            .join("models")
+            .join("best.pt");
+        if path.exists() {
+            return Ok(path);
+        }
+        return Err(anyhow!("Windows 算法包尚未导入或模型文件缺失 best.pt"));
+    }
+
     resolve_resource_file(
         paths,
         &["models", "best.pt"],
@@ -261,6 +299,17 @@ pub(crate) fn resolve_worker_launch(paths: &ControlPaths) -> anyhow::Result<Work
     }
 
     let packaged_name = bundled_binary_name("desktop_worker");
+    if cfg!(target_os = "windows") {
+        let executable = windows_active_runtime_dir(paths)
+            .join("worker")
+            .join("desktop_worker")
+            .join(&packaged_name);
+        if executable.exists() {
+            return Ok(WorkerLaunch::Packaged { executable });
+        }
+        return Err(anyhow!("Windows 算法包尚未导入或 desktop_worker.exe 缺失"));
+    }
+
     if resolve_runtime_resource_file(paths, &["worker", "desktop_worker", packaged_name.as_str()])
         .is_some()
     {
@@ -286,11 +335,115 @@ fn resolve_source_worker_launch(paths: &ControlPaths) -> Option<WorkerLaunch> {
     let ai_dir = repo_root.join("ai-processor");
     let script = ai_dir.join("desktop_worker.py");
     if script.exists() {
+        let python = resolve_development_python_command(paths)?;
         return Some(WorkerLaunch::PythonScript {
-            python: "python3".to_string(),
+            python,
             script,
             python_path: ai_dir,
         });
     }
     None
+}
+
+pub(crate) fn resolve_development_python_command(paths: &ControlPaths) -> Option<String> {
+    for candidate in development_python_candidates(paths) {
+        if python_worker_dependencies_ready(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn development_python_candidates(paths: &ControlPaths) -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    if let Ok(python) = std::env::var("TAURI_WORKER_PYTHON") {
+        if !python.trim().is_empty() {
+            candidates.push(python);
+        }
+    }
+
+    let repo_root = workspace_root_from_resource_dir(&paths.resource_dir);
+    let frontend_dir = repo_root.join("frontend");
+    if cfg!(target_os = "windows") {
+        let local_venv = frontend_dir
+            .join(".desktop-worker-venv")
+            .join("Scripts")
+            .join("python.exe");
+        if local_venv.exists() {
+            candidates.push(local_venv.to_string_lossy().to_string());
+        }
+
+        candidates.extend(
+            windows_python_candidates()
+                .into_iter()
+                .filter(|candidate| candidate.exists())
+                .map(|candidate| candidate.to_string_lossy().to_string()),
+        );
+        candidates.push("python".to_string());
+    } else {
+        let local_venv = frontend_dir
+            .join(".desktop-worker-venv")
+            .join("bin")
+            .join("python");
+        if local_venv.exists() {
+            candidates.push(local_venv.to_string_lossy().to_string());
+        }
+        candidates.push("python3".to_string());
+        candidates.push("python".to_string());
+    }
+
+    candidates
+}
+
+fn python_worker_dependencies_ready(python: &str) -> bool {
+    let mut command = Command::new(python);
+    command.args([
+        "-c",
+        "import cv2, torch, ultralytics, dotenv, numpy, scipy, PIL, lap",
+    ]);
+    suppress_command_window(&mut command)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn windows_python_candidates() -> Vec<PathBuf> {
+    let conda_env_name =
+        std::env::var("TAURI_WORKER_CONDA_ENV").unwrap_or_else(|_| "var-env".to_string());
+    let mut candidates = Vec::new();
+
+    if let Ok(conda_prefix) = std::env::var("CONDA_PREFIX") {
+        candidates.push(PathBuf::from(conda_prefix).join("python.exe"));
+    }
+
+    if let Ok(conda_exe) = std::env::var("CONDA_EXE") {
+        if let Some(root) = Path::new(&conda_exe).parent().and_then(Path::parent) {
+            candidates.push(root.join("envs").join(&conda_env_name).join("python.exe"));
+            candidates.push(root.join("python.exe"));
+        }
+    }
+
+    if let Ok(user_profile) = std::env::var("USERPROFILE") {
+        let user_root = PathBuf::from(user_profile);
+        for root in [
+            user_root.join(".conda"),
+            user_root.join("anaconda3"),
+            user_root.join("miniconda3"),
+        ] {
+            candidates.push(root.join("envs").join(&conda_env_name).join("python.exe"));
+            candidates.push(root.join("python.exe"));
+        }
+    }
+
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let python_root = PathBuf::from(local_app_data)
+            .join("Programs")
+            .join("Python");
+        for version in ["Python312", "Python311", "Python310", "Python313"] {
+            candidates.push(python_root.join(version).join("python.exe"));
+        }
+    }
+
+    candidates
 }

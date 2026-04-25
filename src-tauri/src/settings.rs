@@ -1,5 +1,8 @@
 use crate::*;
 
+const DEFAULT_WINDOWS_GPU_LIMIT_PERCENT: f64 = 60.0;
+const DEFAULT_WINDOWS_MIN_AVAILABLE_GPU_MEMORY_RATIO: f64 = 0.15;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppSettings {
@@ -15,6 +18,10 @@ pub(crate) struct SchedulerSettings {
     pub(crate) max_concurrency: usize,
     pub(crate) mac_cpu_limit_percent: f64,
     pub(crate) mac_min_available_memory_ratio: f64,
+    #[serde(default = "default_windows_gpu_limit_percent")]
+    pub(crate) windows_gpu_limit_percent: f64,
+    #[serde(default = "default_windows_min_available_gpu_memory_ratio")]
+    pub(crate) windows_min_available_gpu_memory_ratio: f64,
 }
 
 impl Default for AppSettings {
@@ -34,8 +41,18 @@ impl Default for SchedulerSettings {
             max_concurrency: 3,
             mac_cpu_limit_percent: 85.0,
             mac_min_available_memory_ratio: 0.2,
+            windows_gpu_limit_percent: DEFAULT_WINDOWS_GPU_LIMIT_PERCENT,
+            windows_min_available_gpu_memory_ratio: DEFAULT_WINDOWS_MIN_AVAILABLE_GPU_MEMORY_RATIO,
         }
     }
+}
+
+fn default_windows_gpu_limit_percent() -> f64 {
+    DEFAULT_WINDOWS_GPU_LIMIT_PERCENT
+}
+
+fn default_windows_min_available_gpu_memory_ratio() -> f64 {
+    DEFAULT_WINDOWS_MIN_AVAILABLE_GPU_MEMORY_RATIO
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

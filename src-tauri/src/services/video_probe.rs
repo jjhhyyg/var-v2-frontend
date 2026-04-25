@@ -21,7 +21,8 @@ pub(crate) fn parse_timeout_ratio(timeout_ratio: &str, video_duration: i64) -> a
 }
 
 pub(crate) fn run_ffprobe(ffprobe_path: &Path, file_path: &Path) -> anyhow::Result<VideoInfo> {
-    let output = Command::new(ffprobe_path)
+    let mut command = Command::new(ffprobe_path);
+    command
         .args([
             "-v",
             "error",
@@ -34,7 +35,8 @@ pub(crate) fn run_ffprobe(ffprobe_path: &Path, file_path: &Path) -> anyhow::Resu
             "-of",
             "json",
         ])
-        .arg(file_path)
+        .arg(file_path);
+    let output = suppress_command_window(&mut command)
         .output()
         .context("执行 ffprobe 失败")?;
 
@@ -110,23 +112,24 @@ pub(crate) fn normalize_analysis_input(
     source: &Path,
     target: &Path,
 ) -> anyhow::Result<()> {
-    let status = Command::new(ffmpeg_path)
-        .args([
-            "-i",
-            source.to_string_lossy().as_ref(),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-crf",
-            "23",
-            "-c:a",
-            "aac",
-            "-movflags",
-            "+faststart",
-            "-y",
-            target.to_string_lossy().as_ref(),
-        ])
+    let mut command = Command::new(ffmpeg_path);
+    command.args([
+        "-i",
+        source.to_string_lossy().as_ref(),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        "-y",
+        target.to_string_lossy().as_ref(),
+    ]);
+    let status = suppress_command_window(&mut command)
         .status()
         .context("执行 ffmpeg 标准化失败")?;
     if !status.success() {

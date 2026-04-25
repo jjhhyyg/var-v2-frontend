@@ -58,8 +58,16 @@ pub(crate) fn try_schedule_tasks_locked(
     state: &DesktopState,
     app: &AppHandle,
 ) -> anyhow::Result<()> {
+    let runtime_state = runtime_state_response(state);
+    if runtime_state.runtime_required && !runtime_state.runtime_ready {
+        state.emit_scheduler_state(app);
+        state.emit_resource_state(app);
+        return Ok(());
+    }
+
     if has_pending_queue_recovery(state) {
         state.emit_scheduler_state(app);
+        state.emit_resource_state(app);
         return Ok(());
     }
 
@@ -88,6 +96,7 @@ pub(crate) fn try_schedule_tasks_locked(
 
     emit_queue_updates(state, app)?;
     state.emit_scheduler_state(app);
+    state.emit_resource_state(app);
     Ok(())
 }
 
@@ -96,20 +105,47 @@ pub(crate) fn can_launch_additional_task(
     settings: &SchedulerSettings,
 ) -> bool {
     let snapshot = state.runtime.resource_probe.lock().snapshot();
+    resource_thresholds_allow_additional_task(&snapshot, settings, cfg!(target_os = "windows"))
+}
+
+pub(crate) fn resource_thresholds_allow_additional_task(
+    snapshot: &ResourceSnapshot,
+    settings: &SchedulerSettings,
+    include_windows_gpu: bool,
+) -> bool {
     let available_ratio = if snapshot.total_memory_bytes == 0 {
         1.0
     } else {
         snapshot.available_memory_bytes as f64 / snapshot.total_memory_bytes as f64
     };
 
-    let _ = (
-        snapshot.gpu_percent,
+    let host_resources_ok = snapshot.cpu_percent < settings.mac_cpu_limit_percent
+        && available_ratio >= settings.mac_min_available_memory_ratio;
+    if !host_resources_ok {
+        return false;
+    }
+
+    if !include_windows_gpu {
+        return true;
+    }
+
+    let Some(gpu_percent) = snapshot.gpu_percent else {
+        return false;
+    };
+    let (Some(gpu_memory_used), Some(gpu_memory_total)) = (
         snapshot.gpu_memory_used_bytes,
         snapshot.gpu_memory_total_bytes,
-    );
+    ) else {
+        return false;
+    };
+    if gpu_memory_total == 0 {
+        return false;
+    }
 
-    snapshot.cpu_percent < settings.mac_cpu_limit_percent
-        && available_ratio >= settings.mac_min_available_memory_ratio
+    let available_gpu_memory_ratio =
+        gpu_memory_total.saturating_sub(gpu_memory_used) as f64 / gpu_memory_total as f64;
+    gpu_percent < settings.windows_gpu_limit_percent
+        && available_gpu_memory_ratio >= settings.windows_min_available_gpu_memory_ratio
 }
 
 pub(crate) fn dispatch_queued_task(
@@ -248,4 +284,89 @@ pub(crate) fn enqueue_tasks(
 
     try_schedule_tasks(state, app)?;
     Ok(task_ids.to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings() -> SchedulerSettings {
+        SchedulerSettings {
+            max_concurrency: 3,
+            mac_cpu_limit_percent: 85.0,
+            mac_min_available_memory_ratio: 0.2,
+            windows_gpu_limit_percent: 60.0,
+            windows_min_available_gpu_memory_ratio: 0.15,
+        }
+    }
+
+    fn snapshot() -> ResourceSnapshot {
+        ResourceSnapshot {
+            cpu_percent: 50.0,
+            available_memory_bytes: 8,
+            total_memory_bytes: 16,
+            gpu_percent: Some(30.0),
+            gpu_memory_used_bytes: Some(4),
+            gpu_memory_total_bytes: Some(16),
+        }
+    }
+
+    #[test]
+    fn allows_when_windows_gpu_thresholds_pass() {
+        assert!(resource_thresholds_allow_additional_task(
+            &snapshot(),
+            &settings(),
+            true
+        ));
+    }
+
+    #[test]
+    fn blocks_when_windows_gpu_utilization_is_too_high() {
+        let mut snapshot = snapshot();
+        snapshot.gpu_percent = Some(60.0);
+
+        assert!(!resource_thresholds_allow_additional_task(
+            &snapshot,
+            &settings(),
+            true
+        ));
+    }
+
+    #[test]
+    fn blocks_when_windows_gpu_memory_is_too_low() {
+        let mut snapshot = snapshot();
+        snapshot.gpu_memory_used_bytes = Some(14);
+
+        assert!(!resource_thresholds_allow_additional_task(
+            &snapshot,
+            &settings(),
+            true
+        ));
+    }
+
+    #[test]
+    fn blocks_when_windows_gpu_metrics_are_missing() {
+        let mut snapshot = snapshot();
+        snapshot.gpu_percent = None;
+
+        assert!(!resource_thresholds_allow_additional_task(
+            &snapshot,
+            &settings(),
+            true
+        ));
+    }
+
+    #[test]
+    fn ignores_gpu_metrics_for_non_windows() {
+        let mut snapshot = snapshot();
+        snapshot.gpu_percent = None;
+        snapshot.gpu_memory_used_bytes = None;
+        snapshot.gpu_memory_total_bytes = None;
+
+        assert!(resource_thresholds_allow_additional_task(
+            &snapshot,
+            &settings(),
+            false
+        ));
+    }
 }
