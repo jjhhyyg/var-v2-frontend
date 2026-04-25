@@ -19,63 +19,192 @@ pub(crate) fn import_video_tasks(
         return Err("存在待恢复的排队任务，请先处理恢复弹窗".to_string());
     }
 
+    if request.items.is_empty() {
+        return Err("请选择要导入的视频文件".to_string());
+    }
+
+    let import_id = Uuid::new_v4().to_string();
+    let total_files = request.items.len();
+    let background_state = state.inner().clone();
+    let background_app = app.clone();
+    let background_import_id = import_id.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        run_batch_import(
+            background_import_id,
+            request,
+            background_app,
+            background_state,
+        );
+    });
+
+    Ok(ImportTasksResponse {
+        import_id,
+        message: "导入中".to_string(),
+        total_files,
+    })
+}
+
+fn run_batch_import(
+    import_id: String,
+    request: ImportTasksRequest,
+    app: AppHandle,
+    state: DesktopState,
+) {
     let mut created_tasks = Vec::new();
     let mut failed_files = Vec::new();
+    let total_files = request.items.len();
 
-    for item in request.items {
+    emit_batch_import_progress(
+        &app,
+        ImportTasksProgress {
+            import_id: import_id.clone(),
+            status: "started".to_string(),
+            total_files,
+            processed_files: 0,
+            file_path: None,
+            file_name: None,
+            created_task: None,
+            failed_file: None,
+            queued_task_ids: Vec::new(),
+            message: "导入中".to_string(),
+        },
+    );
+
+    for (index, item) in request.items.iter().enumerate() {
+        let file_name = import_file_name(&item.file_path);
+        emit_batch_import_progress(
+            &app,
+            ImportTasksProgress {
+                import_id: import_id.clone(),
+                status: "importing".to_string(),
+                total_files,
+                processed_files: index,
+                file_path: Some(item.file_path.clone()),
+                file_name: Some(file_name.clone()),
+                created_task: None,
+                failed_file: None,
+                queued_task_ids: Vec::new(),
+                message: format!("正在导入 {file_name}"),
+            },
+        );
+
         match create_task_from_import(
             &state,
             &item.file_path,
             item.name.clone(),
             request.config.clone(),
         ) {
-            Ok(task) => created_tasks.push(task),
+            Ok(task) => {
+                let task = task
+                    .task_id
+                    .parse::<i64>()
+                    .ok()
+                    .and_then(|task_id| state.load_task_response(task_id).ok())
+                    .unwrap_or(task);
+                if let Ok(task_id) = task.task_id.parse::<i64>() {
+                    state.emit_detail(&app, task_id);
+                }
+                created_tasks.push(task.clone());
+                emit_batch_import_progress(
+                    &app,
+                    ImportTasksProgress {
+                        import_id: import_id.clone(),
+                        status: "succeeded".to_string(),
+                        total_files,
+                        processed_files: index + 1,
+                        file_path: Some(item.file_path.clone()),
+                        file_name: Some(file_name.clone()),
+                        created_task: Some(task),
+                        failed_file: None,
+                        queued_task_ids: Vec::new(),
+                        message: format!("{file_name} 导入成功"),
+                    },
+                );
+            }
             Err(error) => {
                 let file_path = item.file_path.clone();
-                let file_name = Path::new(&file_path)
-                    .file_name()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or(&file_path)
-                    .to_string();
-                failed_files.push(ImportTasksFailure {
+                let failed_file = ImportTasksFailure {
                     file_path,
-                    file_name,
+                    file_name: file_name.clone(),
                     reason: error.to_string(),
-                });
+                };
+                failed_files.push(failed_file.clone());
+                emit_batch_import_progress(
+                    &app,
+                    ImportTasksProgress {
+                        import_id: import_id.clone(),
+                        status: "failed".to_string(),
+                        total_files,
+                        processed_files: index + 1,
+                        file_path: Some(item.file_path.clone()),
+                        file_name: Some(file_name.clone()),
+                        created_task: None,
+                        failed_file: Some(failed_file),
+                        queued_task_ids: Vec::new(),
+                        message: format!("{file_name} 导入失败"),
+                    },
+                );
             }
         }
     }
 
+    let mut completion_message = format!(
+        "导入完成，成功 {} 个，失败 {} 个",
+        created_tasks.len(),
+        failed_files.len()
+    );
     let queued_task_ids = if request.auto_start.unwrap_or(false) && !created_tasks.is_empty() {
         let task_ids = created_tasks
             .iter()
             .filter_map(|task| task.task_id.parse::<i64>().ok())
             .collect::<Vec<_>>();
-        enqueue_tasks(&state, &app, &task_ids, &["PENDING"])
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .map(|task_id| task_id.to_string())
-            .collect()
+        match enqueue_tasks(&state, &app, &task_ids, &["PENDING"]) {
+            Ok(queued) => queued
+                .into_iter()
+                .map(|task_id| task_id.to_string())
+                .collect(),
+            Err(error) => {
+                completion_message = format!("{completion_message}，但加入队列失败: {error}");
+                Vec::new()
+            }
+        }
     } else {
         Vec::new()
     };
 
-    let created_tasks = created_tasks
-        .into_iter()
-        .map(|task| {
-            task.task_id
-                .parse::<i64>()
-                .ok()
-                .and_then(|task_id| state.load_task_response(task_id).ok())
-                .unwrap_or(task)
-        })
-        .collect();
+    emit_batch_import_progress(
+        &app,
+        ImportTasksProgress {
+            import_id,
+            status: "completed".to_string(),
+            total_files,
+            processed_files: total_files,
+            file_path: None,
+            file_name: None,
+            created_task: None,
+            failed_file: None,
+            queued_task_ids,
+            message: completion_message,
+        },
+    );
 
-    Ok(ImportTasksResponse {
-        created_tasks,
-        failed_files,
-        queued_task_ids,
-    })
+    if request.auto_start.unwrap_or(false) {
+        let _ = emit_queue_updates(&state, &app);
+        state.emit_scheduler_state(&app);
+    }
+}
+
+fn emit_batch_import_progress(app: &AppHandle, payload: ImportTasksProgress) {
+    let _ = app.emit("batch-import-progress", payload);
+}
+
+fn import_file_name(file_path: &str) -> String {
+    Path::new(file_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(file_path)
+        .to_string()
 }
 #[tauri::command(async)]
 pub(crate) fn list_tasks(

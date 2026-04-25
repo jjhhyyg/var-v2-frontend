@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PageResult, Task, TaskSortDirection, TaskSortField, TaskStatus } from '~/composables/useTaskApi'
+import type { BatchImportProgress, PageResult, Task, TaskSortDirection, TaskSortField, TaskStatus } from '~/composables/useTaskApi'
 
 interface SelectedVideoItem {
   filePath: string
@@ -8,8 +8,26 @@ interface SelectedVideoItem {
   taskName: string
 }
 
+interface BatchImportFileState {
+  filePath: string
+  fileName: string
+  status: BatchImportProgress['status']
+  message: string
+  taskId?: string
+  reason?: string
+}
+
+interface BatchImportState {
+  importId: string
+  totalFiles: number
+  processedFiles: number
+  status: BatchImportProgress['status']
+  message: string
+  files: Record<string, BatchImportFileState>
+}
+
 const { importVideoTasks, listTasks, startAnalysis, reanalyzeTask, dequeueTask, deleteTask, deleteTasks, getTaskStatus } = useTaskApi()
-const { connect, disconnect, subscribeToTaskUpdates } = useTauriEvents()
+const { connect, disconnect, subscribeToTaskUpdates, subscribeToBatchImportProgress } = useTauriEvents()
 const { pickVideoFiles, listenDragDrop } = useDesktopBridge()
 const { queueRecoveryState } = useDesktopState()
 const toast = useToast()
@@ -27,12 +45,15 @@ const sortDirection = ref<TaskSortDirection>('desc')
 const selectedVideoItems = ref<SelectedVideoItem[]>([])
 const selectedTaskIds = ref<string[]>([])
 let unsubscribeUpdates: (() => void) | null = null
+let unsubscribeBatchImport: (() => void) | null = null
 let unsubscribeDragDrop: (() => void) | null = null
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
 const lastKnownTaskStatus: Record<string, string> = {}
+const currentImportFailedPaths = new Set<string>()
 
 const taskStatusMap = ref<Record<string, TaskStatus>>({})
 const dragDropActive = ref(false)
+const currentBatchImport = ref<BatchImportState | null>(null)
 
 const uploadForm = reactive({
   timeoutRatioNumerator: 1,
@@ -388,30 +409,26 @@ const handleCreateTasks = async (autoStart: boolean) => {
       autoStart
     )
 
-    if (result.createdTasks.length > 0) {
-      toast.add({
-        title: autoStart ? '任务已创建并加入队列' : '任务创建成功',
-        description: `成功创建 ${result.createdTasks.length} 个任务${autoStart ? `，入队 ${result.queuedTaskIds.length} 个` : ''}`,
-        color: 'success'
-      })
+    if (!currentBatchImport.value || currentBatchImport.value.importId !== result.importId) {
+      currentBatchImport.value = {
+        importId: result.importId,
+        totalFiles: result.totalFiles,
+        processedFiles: 0,
+        status: 'started',
+        message: result.message,
+        files: {}
+      }
+      currentImportFailedPaths.clear()
     }
-
-    if (result.failedFiles.length > 0) {
-      toast.add({
-        title: '部分文件创建失败',
-        description: result.failedFiles.map(item => `${item.fileName}: ${item.reason}`).join('；'),
-        color: 'warning'
-      })
-    }
-
-    const failedPaths = new Set(result.failedFiles.map(item => item.filePath))
-    selectedVideoItems.value = selectedVideoItems.value.filter(item => failedPaths.has(item.filePath))
-    await loadTasks()
+    toast.add({
+      title: result.message,
+      description: `已开始后台导入 ${result.totalFiles} 个视频`,
+      color: 'info'
+    })
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '创建任务失败'
-    toast.add({ title: autoStart ? '创建并分析失败' : '创建任务失败', description: errorMessage, color: 'error' })
-  } finally {
     uploading.value = false
+    toast.add({ title: autoStart ? '创建并分析失败' : '创建任务失败', description: errorMessage, color: 'error' })
   }
 }
 
@@ -645,6 +662,13 @@ const getTaskProgressValue = (taskId: string) => {
   return Math.round((taskStatusMap.value[taskId]?.progress || 0) * 100)
 }
 
+const batchImportProgressPercent = computed(() => {
+  if (!currentBatchImport.value || currentBatchImport.value.totalFiles === 0) {
+    return 0
+  }
+  return Math.round((currentBatchImport.value.processedFiles / currentBatchImport.value.totalFiles) * 100)
+})
+
 watch([selectedStatus, pageSize, sortBy, sortDirection], () => {
   currentPage.value = 0
   loadTasks()
@@ -681,10 +705,65 @@ const handleTaskUpdate = (update: { taskId: string, status: string, progress?: n
   }
 }
 
+const handleBatchImportProgress = (progress: BatchImportProgress) => {
+  if (!currentBatchImport.value || currentBatchImport.value.importId !== progress.importId) {
+    currentBatchImport.value = {
+      importId: progress.importId,
+      totalFiles: progress.totalFiles,
+      processedFiles: progress.processedFiles,
+      status: progress.status,
+      message: progress.message,
+      files: {}
+    }
+    currentImportFailedPaths.clear()
+  }
+
+  const nextFiles = { ...currentBatchImport.value.files }
+  if (progress.filePath) {
+    nextFiles[progress.filePath] = {
+      filePath: progress.filePath,
+      fileName: progress.fileName || progress.filePath,
+      status: progress.status,
+      message: progress.message,
+      taskId: progress.createdTask?.taskId,
+      reason: progress.failedFile?.reason
+    }
+  }
+
+  currentBatchImport.value = {
+    ...currentBatchImport.value,
+    totalFiles: progress.totalFiles,
+    processedFiles: progress.processedFiles,
+    status: progress.status,
+    message: progress.message,
+    files: nextFiles
+  }
+
+  if (progress.status === 'succeeded' && progress.filePath) {
+    scheduleTaskReload(250)
+  }
+
+  if (progress.status === 'failed' && progress.filePath) {
+    currentImportFailedPaths.add(progress.filePath)
+  }
+
+  if (progress.status === 'completed') {
+    uploading.value = false
+    selectedVideoItems.value = selectedVideoItems.value.filter(item => currentImportFailedPaths.has(item.filePath))
+    toast.add({
+      title: progress.message,
+      description: progress.queuedTaskIds.length > 0 ? `已加入队列 ${progress.queuedTaskIds.length} 个任务` : undefined,
+      color: currentImportFailedPaths.size > 0 ? 'warning' : 'success'
+    })
+    loadTasks()
+  }
+}
+
 onMounted(async () => {
   try {
     await connect()
     unsubscribeUpdates = subscribeToTaskUpdates(handleTaskUpdate)
+    unsubscribeBatchImport = subscribeToBatchImportProgress(handleBatchImportProgress)
   } catch (error) {
     console.error('Tauri 事件订阅初始化失败:', error)
   }
@@ -716,6 +795,9 @@ onMounted(async () => {
 onUnmounted(() => {
   if (unsubscribeUpdates) {
     unsubscribeUpdates()
+  }
+  if (unsubscribeBatchImport) {
+    unsubscribeBatchImport()
   }
   if (unsubscribeDragDrop) {
     unsubscribeDragDrop()
@@ -840,6 +922,69 @@ const handlePageChange = (page: number) => {
                   />
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="currentBatchImport"
+          class="space-y-3 rounded-lg border border-accented/70 bg-muted/20 p-4"
+        >
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0 space-y-1">
+              <div class="flex items-center gap-2">
+                <UIcon
+                  name="i-lucide-loader-circle"
+                  :class="[
+                    'h-4 w-4 text-primary',
+                    currentBatchImport.status !== 'completed' ? 'animate-spin' : ''
+                  ]"
+                />
+                <h3 class="text-sm font-semibold text-highlighted">
+                  {{ currentBatchImport.status === 'completed' ? '导入完成' : '导入中' }}
+                </h3>
+              </div>
+              <p class="text-xs text-muted">
+                {{ currentBatchImport.message }}
+              </p>
+            </div>
+            <UBadge
+              color="primary"
+              variant="subtle"
+            >
+              {{ currentBatchImport.processedFiles }} / {{ currentBatchImport.totalFiles }}
+            </UBadge>
+          </div>
+          <UProgress
+            :model-value="batchImportProgressPercent"
+            :max="100"
+            color="primary"
+            size="sm"
+          />
+          <div
+            v-if="Object.keys(currentBatchImport.files).length > 0"
+            class="max-h-40 divide-y divide-accented/70 overflow-y-auto rounded-md border border-accented/60 bg-default"
+          >
+            <div
+              v-for="file in Object.values(currentBatchImport.files)"
+              :key="file.filePath"
+              class="flex items-center justify-between gap-3 px-3 py-2"
+            >
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-highlighted">
+                  {{ file.fileName }}
+                </p>
+                <p class="truncate text-xs text-muted">
+                  {{ file.reason || file.message }}
+                </p>
+              </div>
+              <UBadge
+                :color="file.status === 'failed' ? 'error' : file.status === 'succeeded' ? 'success' : 'info'"
+                variant="subtle"
+                size="xs"
+              >
+                {{ file.status === 'failed' ? '失败' : file.status === 'succeeded' ? '完成' : '导入中' }}
+              </UBadge>
             </div>
           </div>
         </div>

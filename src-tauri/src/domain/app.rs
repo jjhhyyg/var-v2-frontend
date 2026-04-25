@@ -137,9 +137,24 @@ pub(crate) struct ImportTasksFailure {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ImportTasksResponse {
-    pub(crate) created_tasks: Vec<TaskResponse>,
-    pub(crate) failed_files: Vec<ImportTasksFailure>,
+    pub(crate) import_id: String,
+    pub(crate) message: String,
+    pub(crate) total_files: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImportTasksProgress {
+    pub(crate) import_id: String,
+    pub(crate) status: String,
+    pub(crate) total_files: usize,
+    pub(crate) processed_files: usize,
+    pub(crate) file_path: Option<String>,
+    pub(crate) file_name: Option<String>,
+    pub(crate) created_task: Option<TaskResponse>,
+    pub(crate) failed_file: Option<ImportTasksFailure>,
     pub(crate) queued_task_ids: Vec<String>,
+    pub(crate) message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

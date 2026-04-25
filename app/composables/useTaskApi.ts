@@ -59,9 +59,22 @@ export interface BatchImportFailure {
 }
 
 export interface BatchImportResult {
-  createdTasks: Task[]
-  failedFiles: BatchImportFailure[]
+  importId: string
+  message: string
+  totalFiles: number
+}
+
+export interface BatchImportProgress {
+  importId: string
+  status: 'started' | 'importing' | 'succeeded' | 'failed' | 'completed'
+  totalFiles: number
+  processedFiles: number
+  filePath?: string
+  fileName?: string
+  createdTask?: Task
+  failedFile?: BatchImportFailure
   queuedTaskIds: string[]
+  message: string
 }
 
 export interface BatchDeleteResult {

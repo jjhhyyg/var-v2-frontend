@@ -2,7 +2,7 @@
  * Tauri 桌面事件订阅封装
  */
 
-import type { Task, TaskStatus } from './useTaskApi'
+import type { BatchImportProgress, Task, TaskStatus } from './useTaskApi'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
 interface TaskListMessage {
@@ -109,12 +109,36 @@ export const useTauriEvents = () => {
     return unsubscribe
   }
 
+  const subscribeToBatchImportProgress = (
+    callback: (progress: BatchImportProgress) => void
+  ): Unsubscribe => {
+    let innerUnlisten: UnlistenFn | null = null
+    let disposed = false
+
+    listenEvent<BatchImportProgress>('batch-import-progress', callback).then((unlisten) => {
+      if (disposed) {
+        unlisten()
+        return
+      }
+      innerUnlisten = unlisten
+    })
+
+    const unsubscribe = () => {
+      disposed = true
+      innerUnlisten?.()
+      activeUnsubscribers.delete(unsubscribe)
+    }
+    activeUnsubscribers.add(unsubscribe)
+    return unsubscribe
+  }
+
   return {
     isConnected: readonly(isConnected),
     connect,
     disconnect,
     subscribeToTask,
     subscribeToTaskUpdates,
-    subscribeToTaskDetailUpdate
+    subscribeToTaskDetailUpdate,
+    subscribeToBatchImportProgress
   }
 }
