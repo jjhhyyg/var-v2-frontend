@@ -48,24 +48,6 @@ pub(crate) fn handle_worker_event(
             state.emit_detail(app, task_id);
             Ok(false)
         }
-        "result_video_ready" => {
-            let abs_path = event
-                .payload
-                .get("path")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow!("result_video_ready 缺少 path"))?;
-            let rel_path = relative_to_task_output(task_id, Path::new(abs_path), "result.mp4")?;
-            let conn = state.open_db()?;
-            conn.execute(
-                "UPDATE analysis_tasks SET result_video_rel_path = ?1 WHERE id = ?2",
-                params![rel_path, task_id],
-            )?;
-            let response = final_status_response(state, task_id)?;
-            state.runtime.progress.write().remove(&task_id);
-            state.emit_status(app, &response);
-            state.emit_detail(app, task_id);
-            Ok(false)
-        }
         "result" => {
             let payload: ResultPayload = serde_json::from_value(event.payload)?;
             persist_result_payload(state, task_id, &payload)?;

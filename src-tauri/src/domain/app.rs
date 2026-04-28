@@ -69,6 +69,18 @@ pub(crate) struct RuntimeManifestFile {
     pub(crate) sha256: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimePackageLock {
+    pub(crate) platform: String,
+    pub(crate) runtime_build_id: String,
+    pub(crate) app_version: String,
+    pub(crate) package_name: String,
+    pub(crate) size: u64,
+    pub(crate) sha256: String,
+    pub(crate) created_at: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SchedulerStateResponse {

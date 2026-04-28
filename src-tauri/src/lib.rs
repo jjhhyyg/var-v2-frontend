@@ -65,8 +65,19 @@ pub(crate) fn suppress_command_window(command: &mut Command) -> &mut Command {
     command
 }
 
+fn focus_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            focus_main_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -101,6 +112,7 @@ pub fn run() {
             commands::tasks::delete_task,
             commands::tasks::delete_tasks,
             commands::tasks::get_video_stream_url,
+            commands::tasks::get_detection_results,
             commands::report::export_report_file,
             commands::scheduler::update_scheduler_settings,
             commands::scheduler::get_queue_recovery_state,

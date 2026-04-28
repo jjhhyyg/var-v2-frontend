@@ -64,10 +64,10 @@ pub(crate) fn create_task_from_import(
     let mut conn = state.open_db()?;
     let tx = conn.transaction()?;
     tx.execute(
-        "INSERT INTO analysis_tasks (name, original_filename, original_video_rel_path, analysis_input_rel_path, result_video_rel_path,
+        "INSERT INTO analysis_tasks (name, original_filename, original_video_rel_path, analysis_input_rel_path,
                                      preprocessed_video_rel_path, video_duration, status, timeout_threshold,
                                      is_timeout, created_at, queue_order)
-         VALUES (?1, ?2, '', NULL, NULL, NULL, ?3, 'PENDING', ?4, 0, ?5, NULL)",
+         VALUES (?1, ?2, '', NULL, NULL, ?3, 'PENDING', ?4, 0, ?5, NULL)",
         params![
             name.unwrap_or_else(|| default_task_name(&source_path)),
             source_path.file_name().and_then(|value| value.to_str()).map(str::to_string),

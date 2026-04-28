@@ -11,7 +11,6 @@ pub(crate) struct WorkerJob {
     pub(crate) device: String,
     pub(crate) log_path: String,
     pub(crate) preprocessed_output_path: String,
-    pub(crate) result_output_path: String,
     pub(crate) config: WorkerJobConfig,
 }
 
@@ -64,6 +63,7 @@ pub(crate) struct PerformancePayload {
     pub(crate) preprocessing_duration_seconds: i64,
     pub(crate) defect_detection_duration_seconds: i64,
     pub(crate) detection_backend: String,
+    pub(crate) preprocessing_benchmark: Option<PreprocessingBenchmarkData>,
     pub(crate) timing_summary: Option<TimingSummaryData>,
 }
 

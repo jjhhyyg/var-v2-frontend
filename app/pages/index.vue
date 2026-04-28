@@ -250,10 +250,6 @@ const isFinalStatus = (status: string) => {
   return status === 'COMPLETED' || status === 'COMPLETED_TIMEOUT' || status === 'FAILED'
 }
 
-const getProcessingStatusText = (status: string) => {
-  return status === 'PREPROCESSING' ? '预处理中' : '分析中'
-}
-
 const scheduleTaskReload = (delay = 350) => {
   if (reloadTimer) {
     clearTimeout(reloadTimer)
@@ -1313,8 +1309,7 @@ const handlePageChange = (page: number) => {
               v-if="(row.original.status === 'PREPROCESSING' || row.original.status === 'ANALYZING') && taskStatusMap[row.original.taskId]"
               class="w-full min-w-0 space-y-1"
             >
-              <div class="flex items-center justify-between text-xs text-muted">
-                <span>{{ getProcessingStatusText(row.original.status) }}</span>
+              <div class="flex items-center justify-end text-xs text-muted">
                 <span>{{ getTaskProgressValue(row.original.taskId) }}%</span>
               </div>
               <UProgress

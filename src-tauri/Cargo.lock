@@ -4221,6 +4221,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-single-instance"
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a33a5b7d78f0dec4406b003ea87c40bf928d801b6fd9323a556172c91d8712c1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.18",
+ "tracing",
+ "windows-sys 0.60.2",
+ "zbus",
+]
+
+[[package]]
 name = "tauri-runtime"
 version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4835,7 +4850,7 @@ dependencies = [
 
 [[package]]
 name = "var-desktop"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -4854,11 +4869,13 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
  "tokio",
  "tower",
  "tower-http",
  "uuid",
  "walkdir",
+ "windows-sys 0.59.0",
  "zip",
 ]
 

@@ -69,6 +69,45 @@
             您的浏览器不支持视频播放
           </video>
 
+          <svg
+            v-if="showDetectionOverlay"
+            class="detection-overlay"
+            :style="detectionOverlayStyle"
+            :viewBox="detectionViewBox"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <g
+              v-for="(detection, index) in currentFrameDetections"
+              :key="`${currentFrame}-${detection.class_id}-${index}`"
+              class="detection-item"
+            >
+              <rect
+                class="detection-box"
+                :x="detection.bbox[0]"
+                :y="detection.bbox[1]"
+                :width="detection.width"
+                :height="detection.height"
+                :stroke="getDetectionColor(detection)"
+              />
+              <rect
+                class="detection-label-bg"
+                :x="detection.bbox[0]"
+                :y="getDetectionLabelY(detection)"
+                :width="getDetectionLabelWidth(detection)"
+                height="22"
+                :fill="getDetectionColor(detection)"
+              />
+              <text
+                class="detection-label"
+                :x="detection.bbox[0] + 6"
+                :y="getDetectionLabelY(detection) + 15"
+              >
+                {{ formatDetectionLabel(detection) }}
+              </text>
+            </g>
+          </svg>
+
           <!-- 播放/暂停覆盖层 -->
           <div
             v-if="!videoError && !videoLoading"
@@ -106,22 +145,7 @@
             >
               预处理视频
             </UButton>
-            <UButton
-              v-if="hasResultVideo"
-              :variant="videoType === 'result' ? 'solid' : 'outline'"
-              color="primary"
-              @click="switchVideo('result')"
-            >
-              结果视频
-            </UButton>
           </UFieldGroup>
-
-          <span
-            v-if="!hasResultVideo"
-            class="no-result-hint text-muted text-sm"
-          >
-            结果视频生成中...
-          </span>
 
           <!-- 帧控制 -->
           <div class="frame-controls">
@@ -350,7 +374,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { DetectionResult } from '~/composables/useTaskApi'
 
 interface Event {
   eventId: string
@@ -367,7 +392,6 @@ interface Props {
   videoDuration: number
   frameRate?: number
   totalFrames?: number
-  resultVideoPath?: string
   preprocessedVideoPath?: string
   events?: Event[]
 }
@@ -379,7 +403,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const videoPlayer = ref<HTMLVideoElement>()
 const timeline = ref<HTMLDivElement>()
-const videoType = ref<'original' | 'preprocessed' | 'result'>('original')
+const videoType = ref<'original' | 'preprocessed'>('original')
 const currentTime = ref(0)
 const duration = ref(0)
 const isPlaying = ref(false)
@@ -392,10 +416,18 @@ const isDraggingTimeline = ref(false)
 const wasPlayingBeforeDrag = ref(false)
 const dragTimePercentage = ref(0)
 const currentVideoUrl = ref('')
-const { getVideoStreamUrl } = useTaskApi()
+const detections = ref<DetectionResult[][]>([])
+const detectionSourceWidth = ref(0)
+const detectionSourceHeight = ref(0)
+const videoDisplayRect = ref({ width: 0, height: 0, top: 0, left: 0 })
+let resizeObserver: ResizeObserver | null = null
+const { getVideoStreamUrl, getDetectionResults } = useTaskApi()
 
-const hasResultVideo = computed(() => !!props.resultVideoPath)
 const hasPreprocessedVideo = computed(() => !!props.preprocessedVideoPath)
+
+const preferredVideoType = computed<'original' | 'preprocessed'>(() => {
+  return hasPreprocessedVideo.value ? 'preprocessed' : 'original'
+})
 
 const progressPercentage = computed(() => {
   // 拖动时使用拖动进度，否则使用实际播放进度
@@ -414,6 +446,27 @@ const fps = computed(() => props.frameRate)
 const currentFrame = computed(() => {
   return Math.min(totalFrameMax.value, Math.floor(currentTime.value * fps.value))
 })
+
+const currentFrameDetections = computed(() => detections.value[currentFrame.value] || [])
+
+const showDetectionOverlay = computed(() => {
+  return !videoError.value
+    && !videoLoading.value
+    && detectionSourceWidth.value > 0
+    && detectionSourceHeight.value > 0
+    && currentFrameDetections.value.length > 0
+})
+
+const detectionViewBox = computed(() => {
+  return `0 0 ${detectionSourceWidth.value} ${detectionSourceHeight.value}`
+})
+
+const detectionOverlayStyle = computed(() => ({
+  width: `${videoDisplayRect.value.width}px`,
+  height: `${videoDisplayRect.value.height}px`,
+  top: `${videoDisplayRect.value.top}px`,
+  left: `${videoDisplayRect.value.left}px`
+}))
 
 // 总帧数
 const totalFrames = computed(() => {
@@ -441,8 +494,7 @@ const sortedEvents = computed(() => {
   return [...props.events].sort((a, b) => a.startFrame - b.startFrame)
 })
 
-const loadVideoSource = async (type: 'original' | 'preprocessed' | 'result') => {
-  if (type === 'result' && !hasResultVideo.value) return
+const loadVideoSource = async (type: 'original' | 'preprocessed') => {
   if (type === 'preprocessed' && !hasPreprocessedVideo.value) return
 
   videoLoading.value = true
@@ -460,9 +512,68 @@ const loadVideoSource = async (type: 'original' | 'preprocessed' | 'result') => 
   }
 }
 
+const loadDetections = async () => {
+  detections.value = []
+  try {
+    detections.value = await getDetectionResults(props.taskId)
+  } catch (error) {
+    console.warn('加载检测结果失败:', error)
+  }
+}
+
+const updateVideoDisplayRect = () => {
+  const video = videoPlayer.value
+  const wrapper = video?.parentElement
+  if (!video || !wrapper) return
+
+  const videoRect = video.getBoundingClientRect()
+  const wrapperRect = wrapper.getBoundingClientRect()
+  videoDisplayRect.value = {
+    width: videoRect.width,
+    height: videoRect.height,
+    top: videoRect.top - wrapperRect.top,
+    left: videoRect.left - wrapperRect.left
+  }
+}
+
+const updateDetectionSourceSize = () => {
+  const video = videoPlayer.value
+  if (!video) return
+
+  detectionSourceWidth.value = video.videoWidth || 0
+  detectionSourceHeight.value = video.videoHeight || 0
+  updateVideoDisplayRect()
+}
+
+const getDetectionColor = (detection: DetectionResult): string => {
+  const colors = [
+    '#22c55e',
+    '#ef4444',
+    '#3b82f6',
+    '#f59e0b',
+    '#8b5cf6',
+    '#06b6d4',
+    '#f97316',
+    '#ec4899'
+  ]
+  return colors[Math.abs(detection.class_id) % colors.length] ?? '#22c55e'
+}
+
+const formatDetectionLabel = (detection: DetectionResult): string => {
+  return `${detection.class_name} ${(detection.confidence * 100).toFixed(0)}%`
+}
+
+const getDetectionLabelWidth = (detection: DetectionResult): number => {
+  const availableWidth = Math.max(0, detectionSourceWidth.value - detection.bbox[0])
+  return Math.min(availableWidth, Math.max(76, formatDetectionLabel(detection).length * 8 + 12))
+}
+
+const getDetectionLabelY = (detection: DetectionResult): number => {
+  return Math.max(0, detection.bbox[1] - 22)
+}
+
 // 切换视频
-const switchVideo = async (type: 'original' | 'preprocessed' | 'result') => {
-  if (type === 'result' && !hasResultVideo.value) return
+const switchVideo = async (type: 'original' | 'preprocessed') => {
   if (type === 'preprocessed' && !hasPreprocessedVideo.value) return
 
   const currentPlayTime = currentTime.value
@@ -501,6 +612,7 @@ const onTimeUpdate = () => {
 const onLoadedMetadata = () => {
   if (videoPlayer.value) {
     duration.value = videoPlayer.value.duration || props.videoDuration
+    updateDetectionSourceSize()
   }
 }
 
@@ -514,6 +626,7 @@ const onVideoLoadStart = () => {
 const onVideoCanPlay = () => {
   videoLoading.value = false
   videoError.value = false
+  updateDetectionSourceSize()
 }
 
 // 视频加载错误
@@ -759,14 +872,18 @@ const onTimelineMouseUp = () => {
 const previousFrame = () => {
   if (!videoPlayer.value || currentFrame.value <= 0) return
   const targetFrame = currentFrame.value - 1
-  videoPlayer.value.currentTime = targetFrame / fps.value + 0.001
+  const targetTime = targetFrame / fps.value + 0.001
+  currentTime.value = targetTime
+  videoPlayer.value.currentTime = targetTime
 }
 
 // 下一帧
 const nextFrame = () => {
   if (!videoPlayer.value || currentFrame.value >= totalFrameMax.value) return
   const targetFrame = currentFrame.value + 1
-  videoPlayer.value.currentTime = targetFrame / fps.value + 0.001
+  const targetTime = targetFrame / fps.value + 0.001
+  currentTime.value = targetTime
+  videoPlayer.value.currentTime = targetTime
 }
 
 // 验证帧号输入（只允许数字）
@@ -791,16 +908,45 @@ const jumpToFrame = () => {
   const clampedFrame = Math.max(0, Math.min(targetFrame, totalFrameMax.value))
   currentFrameInput.value = String(clampedFrame)
 
-  videoPlayer.value.currentTime = clampedFrame / fps.value + 0.001
+  const targetTime = clampedFrame / fps.value + 0.001
+  currentTime.value = targetTime
+  videoPlayer.value.currentTime = targetTime
 }
 
 watch(
-  () => [props.taskId, props.resultVideoPath, props.preprocessedVideoPath],
-  async () => {
+  () => [props.taskId, props.preprocessedVideoPath],
+  async ([taskId], previousValues) => {
+    const previousTaskId = previousValues?.[0]
+    const taskChanged = taskId !== previousTaskId
+    const preprocessedBecameAvailable = !previousValues?.[1] && hasPreprocessedVideo.value
+    const currentTypeUnavailable = videoType.value === 'preprocessed' && !hasPreprocessedVideo.value
+    if (taskChanged || currentTypeUnavailable || (videoType.value === 'original' && preprocessedBecameAvailable)) {
+      videoType.value = preferredVideoType.value
+    }
+
     await loadVideoSource(videoType.value)
+    await loadDetections()
   },
   { immediate: true }
 )
+
+onMounted(() => {
+  nextTick(() => {
+    if (videoPlayer.value) {
+      resizeObserver = new ResizeObserver(updateVideoDisplayRect)
+      resizeObserver.observe(videoPlayer.value)
+    }
+    updateVideoDisplayRect()
+  })
+  window.addEventListener('resize', updateVideoDisplayRect)
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  window.removeEventListener('resize', updateVideoDisplayRect)
+  document.removeEventListener('mousemove', onTimelineMouseMove)
+  document.removeEventListener('mouseup', onTimelineMouseUp)
+})
 </script>
 
 <style scoped>
@@ -845,6 +991,33 @@ watch(
   cursor: pointer;
 }
 
+.detection-overlay {
+  position: absolute;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.detection-box {
+  fill: transparent;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75));
+}
+
+.detection-label-bg {
+  opacity: 0.92;
+}
+
+.detection-label {
+  fill: white;
+  font-size: 14px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.25);
+  stroke-width: 2px;
+}
+
 /* 视频播放覆盖层 */
 .video-overlay {
   position: absolute;
@@ -857,7 +1030,7 @@ watch(
   justify-content: flex-end;
   padding: 1rem;
   pointer-events: none;
-  z-index: 1;
+  z-index: 2;
 }
 
 .video-overlay:hover {

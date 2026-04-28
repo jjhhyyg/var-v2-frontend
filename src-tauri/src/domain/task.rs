@@ -7,7 +7,6 @@ pub(crate) struct TaskResponse {
     pub(crate) name: String,
     pub(crate) original_filename: Option<String>,
     pub(crate) video_duration: i64,
-    pub(crate) result_video_path: Option<String>,
     pub(crate) preprocessed_video_path: Option<String>,
     pub(crate) status: String,
     pub(crate) timeout_threshold: i64,
@@ -82,7 +81,32 @@ pub(crate) struct PerformanceData {
     pub(crate) preprocessing_duration_seconds: i64,
     pub(crate) defect_detection_duration_seconds: i64,
     pub(crate) detection_backend: String,
+    pub(crate) preprocessing_benchmark: Option<PreprocessingBenchmarkData>,
     pub(crate) timing_summary: Option<TimingSummaryData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PreprocessingBenchmarkData {
+    pub(crate) schema_version: i64,
+    pub(crate) backend: String,
+    pub(crate) total_frames: i64,
+    pub(crate) total_duration_seconds: f64,
+    pub(crate) total_fps: f64,
+    #[serde(default)]
+    pub(crate) decode_duration_seconds: f64,
+    #[serde(default)]
+    pub(crate) frame_processing_duration_seconds: f64,
+    #[serde(default)]
+    pub(crate) encode_duration_seconds: f64,
+    #[serde(default)]
+    pub(crate) other_duration_seconds: f64,
+    #[serde(default)]
+    pub(crate) decode_average_ms: f64,
+    #[serde(default)]
+    pub(crate) frame_processing_average_ms: f64,
+    #[serde(default)]
+    pub(crate) encode_average_ms: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

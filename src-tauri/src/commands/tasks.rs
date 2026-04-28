@@ -333,7 +333,6 @@ pub(crate) fn reanalyze_task(
 
     reset_task_for_reanalysis(&conn, task_id).map_err(|error| error.to_string())?;
 
-    let _ = fs::remove_file(task_dir.join("output").join("result.mp4"));
     let _ = fs::remove_file(task_dir.join("output").join("preprocessed.mp4"));
     let _ = fs::remove_file(task_dir.join("output").join("detections.json"));
 
@@ -474,11 +473,6 @@ pub(crate) fn get_video_stream_url(
             .preprocessed_video_path
             .clone()
             .ok_or_else(|| "预处理视频尚未生成".to_string())?,
-        "result" => loaded
-            .response
-            .result_video_path
-            .clone()
-            .ok_or_else(|| "结果视频尚未生成".to_string())?,
         _ => return Err("不支持的视频类型".to_string()),
     };
 
@@ -492,4 +486,41 @@ pub(crate) fn get_video_stream_url(
         "http://127.0.0.1:{}/media/{}",
         state.runtime.media_server_port, token
     ))
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct DetectionResult {
+    class_id: i64,
+    class_name: String,
+    confidence: f64,
+    bbox: [f64; 4],
+    center_x: f64,
+    center_y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[tauri::command(async)]
+pub(crate) fn get_detection_results(
+    task_id: String,
+    state: State<DesktopState>,
+) -> CommandResult<Vec<Vec<DetectionResult>>> {
+    let task_id = task_id.parse::<i64>().map_err(|error| error.to_string())?;
+    let media_root = state
+        .current_media_root()
+        .map_err(|error| error.to_string())?;
+    let detections_path = task_root(&media_root, task_id)
+        .join("output")
+        .join("detections.json");
+
+    if !detections_path.exists() {
+        return Err("检测结果文件不存在".to_string());
+    }
+
+    let raw = fs::read_to_string(&detections_path)
+        .map_err(|error| format!("读取检测结果失败: {error}"))?;
+    let parsed: Vec<Vec<DetectionResult>> = serde_json::from_str(&raw)
+        .map_err(|error| format!("检测结果文件损坏，无法解析 JSON: {error}"))?;
+
+    Ok(parsed)
 }

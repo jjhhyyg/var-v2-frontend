@@ -245,14 +245,40 @@ pub(crate) fn resolve_ffprobe_path(paths: &ControlPaths) -> PathBuf {
     .unwrap_or_else(|_| PathBuf::from(binary))
 }
 
+pub(crate) fn resolve_var_video_analyzer_path(paths: &ControlPaths) -> PathBuf {
+    let binary = bundled_binary_name("var-video-analyzer");
+    if cfg!(target_os = "windows") {
+        let path = windows_active_runtime_dir(paths)
+            .join("tools")
+            .join(&binary);
+        if path.exists() {
+            return path;
+        }
+    }
+    PathBuf::from(binary)
+}
+
+pub(crate) fn resolve_var_gpu_preprocessor_path(paths: &ControlPaths) -> PathBuf {
+    let binary = bundled_binary_name("var-gpu-preprocessor");
+    if cfg!(target_os = "windows") {
+        let path = windows_active_runtime_dir(paths)
+            .join("tools")
+            .join(&binary);
+        if path.exists() {
+            return path;
+        }
+    }
+    PathBuf::from(binary)
+}
+
 pub(crate) fn resolve_model_path(paths: &ControlPaths) -> anyhow::Result<PathBuf> {
     if cfg!(debug_assertions) {
         let repo_root = workspace_root_from_resource_dir(&paths.resource_dir);
         let weights_dir = repo_root.join("ai-processor").join("weights");
-        let model_names = if cfg!(target_os = "windows") {
-            ["best.onnx", "best.pt"]
+        let model_names: &[&str] = if cfg!(target_os = "windows") {
+            &["best.onnx"]
         } else {
-            ["best.pt", "best.onnx"]
+            &["best.pt", "best.onnx"]
         };
         for model_name in model_names {
             let dev_model = weights_dir.join(model_name);
@@ -398,7 +424,7 @@ fn development_python_candidates(paths: &ControlPaths) -> Vec<String> {
 
 fn python_worker_dependencies_ready(python: &str) -> bool {
     let mut command = Command::new(python);
-    command.args(["-c", "import cv2, onnxruntime, dotenv, numpy, scipy, PIL"]);
+    command.args(["-c", "import cv2, dotenv, numpy"]);
     command
         .env("ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS", "1")
         .env("ONNX_REQUIRE_CUDA", "0");

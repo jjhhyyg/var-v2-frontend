@@ -26,7 +26,6 @@ export interface Task {
   preprocessingCompletedAt?: string
   completedAt?: string
   failureReason?: string
-  resultVideoPath?: string
   preprocessedVideoPath?: string
   queuePosition?: number
 }
@@ -98,6 +97,17 @@ export interface AnomalyEvent {
   metadata?: Record<string, unknown>
 }
 
+export interface DetectionResult {
+  class_id: number
+  class_name: string
+  confidence: number
+  bbox: [number, number, number, number]
+  center_x: number
+  center_y: number
+  width: number
+  height: number
+}
+
 export interface VideoInfo {
   sourceVideoFps: number
   totalFrames: number
@@ -111,7 +121,23 @@ export interface PerformanceInfo {
   preprocessingDurationSeconds: number
   defectDetectionDurationSeconds: number
   detectionBackend: string
+  preprocessingBenchmark?: PreprocessingBenchmark | null
   timingSummary?: TimingSummary | null
+}
+
+export interface PreprocessingBenchmark {
+  schemaVersion: number
+  backend: string
+  totalFrames: number
+  totalDurationSeconds: number
+  totalFps: number
+  decodeDurationSeconds: number
+  frameProcessingDurationSeconds: number
+  encodeDurationSeconds: number
+  otherDurationSeconds: number
+  decodeAverageMs: number
+  frameProcessingAverageMs: number
+  encodeAverageMs: number
 }
 
 export interface TimingSummary {
@@ -246,11 +272,15 @@ export const useTaskApi = () => {
     })
   }
 
-  const getVideoStreamUrl = async (taskId: string, videoType: 'original' | 'preprocessed' | 'result'): Promise<string> => {
+  const getVideoStreamUrl = async (taskId: string, videoType: 'original' | 'preprocessed'): Promise<string> => {
     return invokeCommand<string>('get_video_stream_url', {
       taskId,
       videoType
     })
+  }
+
+  const getDetectionResults = async (taskId: string): Promise<DetectionResult[][]> => {
+    return invokeCommand<DetectionResult[][]>('get_detection_results', { taskId })
   }
 
   const exportReportFile = async (path: string, options: { textContent?: string, base64Content?: string }): Promise<string> => {
@@ -276,6 +306,7 @@ export const useTaskApi = () => {
     deleteTask,
     deleteTasks,
     getVideoStreamUrl,
+    getDetectionResults,
     exportReportFile
   }
 }

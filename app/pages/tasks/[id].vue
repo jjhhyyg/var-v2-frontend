@@ -159,6 +159,14 @@ const formatDuration = (seconds?: number | null) => {
   return `${secs}秒`
 }
 
+const formatNumber = (value?: number | null, digits = 2) => {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '-'
+}
+
+const formatPreciseSeconds = (seconds?: number | null) => {
+  return typeof seconds === 'number' && Number.isFinite(seconds) ? `${seconds.toFixed(2)}秒` : '-'
+}
+
 const formatDateTime = (time?: string) => {
   return time ? new Date(time).toLocaleString('zh-CN') : '-'
 }
@@ -173,6 +181,33 @@ const frameToTime = (frame: number) => {
 const eventRows = computed(() => {
   if (!result.value) return []
   return [...result.value.anomalyEvents].sort((a, b) => a.startFrame - b.startFrame)
+})
+
+const preprocessingBenchmarkRows = computed(() => {
+  const benchmark = result.value?.performance.preprocessingBenchmark
+  if (!benchmark) return []
+  return [
+    {
+      label: '解码',
+      duration: benchmark.decodeDurationSeconds,
+      averageMs: benchmark.decodeAverageMs
+    },
+    {
+      label: '单帧处理',
+      duration: benchmark.frameProcessingDurationSeconds,
+      averageMs: benchmark.frameProcessingDurationSeconds > 0 ? benchmark.frameProcessingAverageMs : null
+    },
+    {
+      label: '编码',
+      duration: benchmark.encodeDurationSeconds,
+      averageMs: benchmark.encodeAverageMs
+    },
+    {
+      label: '其他',
+      duration: benchmark.otherDurationSeconds,
+      averageMs: null
+    }
+  ]
 })
 
 onMounted(async () => {
@@ -318,13 +353,12 @@ onUnmounted(() => {
         v-if="
           status &&
             (status.status === 'PREPROCESSING' ||
-              status.status === 'ANALYZING' ||
-              (status.phase === '生成结果视频' && status.currentFrame !== undefined))
+              status.status === 'ANALYZING')
         "
       >
         <template #header>
           <h2 class="text-xl font-semibold">
-            {{ status.phase === '生成结果视频' ? '结果视频生成进度' : '处理进度' }}
+            处理进度
           </h2>
         </template>
 
@@ -412,7 +446,7 @@ onUnmounted(() => {
           </div>
           <div>
             <p class="text-muted">预处理平均 FPS</p>
-            <p class="font-semibold">{{ result.performance.preprocessingAverageFps?.toFixed(2) ?? '-' }}</p>
+            <p class="font-semibold">{{ formatNumber(result.performance.preprocessingAverageFps) }}</p>
           </div>
           <div>
             <p class="text-muted">分辨率</p>
@@ -427,6 +461,44 @@ onUnmounted(() => {
             <p class="font-semibold">{{ formatDuration(result.performance.defectDetectionDurationSeconds) }}</p>
           </div>
         </div>
+
+        <div v-if="result.performance.preprocessingBenchmark" class="mt-5 border-t border-muted pt-4">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold">预处理 benchmark</h3>
+            <UBadge color="neutral" variant="soft">
+              {{ result.performance.preprocessingBenchmark.backend }}
+            </UBadge>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
+            <div>
+              <p class="text-muted">总 FPS</p>
+              <p class="font-semibold">{{ formatNumber(result.performance.preprocessingBenchmark.totalFps) }}</p>
+            </div>
+            <div>
+              <p class="text-muted">总耗时</p>
+              <p class="font-semibold">{{ formatPreciseSeconds(result.performance.preprocessingBenchmark.totalDurationSeconds) }}</p>
+            </div>
+            <div>
+              <p class="text-muted">统计帧数</p>
+              <p class="font-semibold">{{ result.performance.preprocessingBenchmark.totalFrames }}</p>
+            </div>
+          </div>
+
+          <div class="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-4">
+            <div
+              v-for="row in preprocessingBenchmarkRows"
+              :key="row.label"
+              class="rounded-md border border-muted p-3"
+            >
+              <p class="text-muted">{{ row.label }}</p>
+              <p class="mt-1 font-semibold">{{ formatPreciseSeconds(row.duration) }}</p>
+              <p class="mt-1 text-xs text-muted">
+                {{ row.averageMs === null ? '-' : `${formatNumber(row.averageMs, 3)} ms/帧` }}
+              </p>
+            </div>
+          </div>
+        </div>
       </UCard>
 
       <UCard v-if="result">
@@ -439,7 +511,6 @@ onUnmounted(() => {
           :video-duration="task.videoDuration"
           :frame-rate="sourceFps"
           :total-frames="result.videoInfo.totalFrames"
-          :result-video-path="task.resultVideoPath"
           :preprocessed-video-path="task.preprocessedVideoPath"
           :events="result.anomalyEvents"
         />

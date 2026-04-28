@@ -16,6 +16,37 @@ const selectedResult = computed(() => selectedTaskId.value ? results.value[selec
 const timingSummary = computed(() => selectedResult.value?.performance.timingSummary ?? null)
 const timingStages = computed(() => timingSummary.value?.stages ?? [])
 const hasTimingSummary = computed(() => timingStages.value.length > 0)
+const preprocessingBenchmark = computed(() => selectedResult.value?.performance.preprocessingBenchmark ?? null)
+const preprocessingBenchmarkStages = computed(() => {
+  const benchmark = preprocessingBenchmark.value
+  if (!benchmark) return []
+  return [
+    {
+      key: 'decode',
+      label: '解码',
+      totalSeconds: benchmark.decodeDurationSeconds,
+      averageMs: benchmark.decodeAverageMs
+    },
+    {
+      key: 'frameProcessing',
+      label: '单帧处理',
+      totalSeconds: benchmark.frameProcessingDurationSeconds,
+      averageMs: benchmark.frameProcessingDurationSeconds > 0 ? benchmark.frameProcessingAverageMs : null
+    },
+    {
+      key: 'encode',
+      label: '编码',
+      totalSeconds: benchmark.encodeDurationSeconds,
+      averageMs: benchmark.encodeAverageMs
+    },
+    {
+      key: 'other',
+      label: '其他',
+      totalSeconds: benchmark.otherDurationSeconds,
+      averageMs: null
+    }
+  ]
+})
 
 const totalStageMs = computed(() => timingStages.value.reduce((total, stage) => total + stage.totalMs, 0))
 const dominantStage = computed(() => {
@@ -227,10 +258,14 @@ onMounted(() => {
             </div>
           </template>
 
-          <div class="grid grid-cols-2 gap-4 text-sm lg:grid-cols-5">
+          <div class="grid grid-cols-2 gap-4 text-sm lg:grid-cols-6">
             <div>
               <p class="text-muted">检测 FPS</p>
               <p class="text-lg font-semibold">{{ formatNumber(selectedResult.performance.defectDetectionAverageFps) }}</p>
+            </div>
+            <div>
+              <p class="text-muted">预处理 FPS</p>
+              <p class="text-lg font-semibold">{{ formatNumber(selectedResult.performance.preprocessingAverageFps) }}</p>
             </div>
             <div>
               <p class="text-muted">检测耗时</p>
@@ -247,6 +282,36 @@ onMounted(() => {
             <div>
               <p class="text-muted">主要耗时段</p>
               <p class="truncate text-lg font-semibold">{{ dominantStage?.label ?? '-' }}</p>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard v-if="selectedTask && selectedResult && preprocessingBenchmark">
+          <template #header>
+            <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 class="text-base font-semibold">预处理 benchmark</h2>
+                <p class="text-sm text-muted">
+                  {{ preprocessingBenchmark.backend }} · {{ preprocessingBenchmark.totalFrames }} 帧 · {{ formatNumber(preprocessingBenchmark.totalFps) }} FPS
+                </p>
+              </div>
+              <UBadge color="neutral" variant="soft">
+                v{{ preprocessingBenchmark.schemaVersion }}
+              </UBadge>
+            </div>
+          </template>
+
+          <div class="grid grid-cols-1 gap-4 text-sm md:grid-cols-4">
+            <div
+              v-for="stage in preprocessingBenchmarkStages"
+              :key="stage.key"
+              class="rounded-md border border-muted p-3"
+            >
+              <p class="text-muted">{{ stage.label }}</p>
+              <p class="mt-1 text-lg font-semibold">{{ formatSeconds(stage.totalSeconds) }}</p>
+              <p class="mt-1 text-xs text-muted">
+                {{ stage.averageMs === null ? '-' : `${formatNumber(stage.averageMs, 3)} ms/帧` }}
+              </p>
             </div>
           </div>
         </UCard>

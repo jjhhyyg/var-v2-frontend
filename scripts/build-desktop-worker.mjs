@@ -2,6 +2,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, re
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { copyPeDependencies } from './pe-deps.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
@@ -19,20 +20,7 @@ const pyInstallerRoot = join(frontendDir, '.tauri-worker-build')
 const workerVenvDir = join(frontendDir, '.desktop-worker-venv')
 const workerBuildStampPath = join(pyInstallerRoot, 'worker-build-stamp.json')
 const workerPyInstallerSpecPath = join(pyInstallerRoot, 'desktop_worker.spec')
-const onnxExportStampPath = join(pyInstallerRoot, 'onnx-export-stamp.json')
-const sourcePtModelPath = join(aiDir, 'weights', 'best.pt')
 const sourceOnnxModelPath = join(aiDir, 'weights', 'best.onnx')
-const onnxExportConfig = Object.freeze({
-  format: 'onnx',
-  imgsz: (process.env.TAURI_WORKER_ONNX_IMGSZ ?? '640,1024')
-    .split(',')
-    .map(value => Number(value.trim())),
-  opset: Number(process.env.TAURI_WORKER_ONNX_OPSET ?? 17),
-  dynamic: false,
-  simplify: false,
-  half: false,
-  nms: false
-})
 const workerPyInstallerExcludes = Object.freeze([
   // GUI / notebook stacks are not used by the desktop NDJSON worker.
   'PyQt5',
@@ -71,6 +59,7 @@ const workerPyInstallerExcludes = Object.freeze([
   'mss',
   'ncnn',
   'onnx',
+  'onnxruntime',
   'openvino',
   'paddle',
   'paddlepaddle',
@@ -123,9 +112,9 @@ function workerPythonEnv(extra = {}) {
 
 function verifyPackagedWorker(distDir) {
   const executable = join(distDir, bundledExecutableName('desktop_worker'))
-  runCommand(executable, ['--self-check', '--backend', 'onnx', '--model', sourceOnnxModelPath], {
+  runCommand(executable, ['--self-check'], {
     cwd: aiDir,
-    env: workerPythonEnv({ ONNX_REQUIRE_CUDA: '1' })
+    env: workerPythonEnv()
   })
 }
 
@@ -158,7 +147,7 @@ function copyFileIfExists(source, targetDir, targetName) {
   cpSync(realpathSync(source), join(targetDir, targetName))
 }
 
-function copyWindowsToolRuntime(source, targetDir, targetName) {
+function copyWindowsToolRuntime(source, targetDir, targetName, runtimeDllNames = []) {
   copyFileIfExists(source, targetDir, targetName)
   if (process.platform !== 'win32') {
     return
@@ -170,16 +159,20 @@ function copyWindowsToolRuntime(source, targetDir, targetName) {
     return
   }
 
-  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.dll')) {
+  const manualDlls = []
+  for (const dllName of runtimeDllNames) {
+    const sourceDll = join(sourceDir, dllName)
+    if (!existsSync(sourceDll)) {
       continue
     }
-
-    const targetDll = join(targetDir, entry.name)
+    const targetDll = join(targetDir, dllName)
     if (!existsSync(targetDll)) {
-      cpSync(join(sourceDir, entry.name), targetDll, { dereference: true })
+      cpSync(sourceDll, targetDll, { dereference: true })
     }
+    manualDlls.push(targetDll)
   }
+
+  copyPeDependencies([source, ...manualDlls], [sourceDir], targetDir)
 }
 
 function normalizeBundledResource(targetPath) {
@@ -201,21 +194,7 @@ function pruneLegacyWorkerPackages(distDir) {
     return
   }
 
-  const torchLibDir = join(internalDir, 'torch', 'lib')
-  if (existsSync(torchLibDir)) {
-    for (const entry of readdirSync(torchLibDir, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.dll')) {
-        continue
-      }
-
-      const targetDll = join(internalDir, entry.name)
-      if (!existsSync(targetDll)) {
-        cpSync(join(torchLibDir, entry.name), targetDll, { dereference: true })
-      }
-    }
-  }
-
-  for (const legacyPackage of ['torch', 'torchvision', 'ultralytics']) {
+  for (const legacyPackage of ['onnxruntime', 'torch', 'torchvision', 'ultralytics']) {
     rmSync(join(internalDir, legacyPackage), { recursive: true, force: true })
   }
 }
@@ -265,216 +244,6 @@ coll = COLLECT(
     name='desktop_worker',
 )
 `, 'utf-8')
-}
-
-function boolArg(value) {
-  return value ? '1' : '0'
-}
-
-function readJsonFile(path) {
-  if (!existsSync(path)) {
-    return null
-  }
-
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8'))
-  } catch {
-    return null
-  }
-}
-
-function validateOnnxExportConfig() {
-  const imageSizes = Array.isArray(onnxExportConfig.imgsz)
-    ? onnxExportConfig.imgsz
-    : [onnxExportConfig.imgsz]
-
-  if (
-    imageSizes.length === 0
-    || imageSizes.length > 2
-    || imageSizes.some(value => !Number.isInteger(value) || value <= 0)
-  ) {
-    throw new Error(`非法 ONNX imgsz: ${onnxExportConfig.imgsz}`)
-  }
-
-  if (!Number.isInteger(onnxExportConfig.opset) || onnxExportConfig.opset <= 0) {
-    throw new Error(`非法 ONNX opset: ${onnxExportConfig.opset}`)
-  }
-}
-
-function requireOnnxCudaProvider(requirementsFile) {
-  const explicit = process.env.TAURI_WORKER_ONNX_REQUIRE_CUDA
-  if (explicit !== undefined) {
-    return !['0', 'false', 'FALSE', 'no', 'NO'].includes(explicit)
-  }
-
-  return process.platform === 'win32' && requirementsFile.toLowerCase().includes('cuda')
-}
-
-function onnxStampPayload({ pythonIdentity, requirementsFile }) {
-  const sourceStats = statSync(sourcePtModelPath)
-  return {
-    sourceModel: sourcePtModelPath,
-    sourceMtime: Math.floor(sourceStats.mtimeMs),
-    sourceSize: sourceStats.size,
-    targetModel: sourceOnnxModelPath,
-    pythonIdentity,
-    requirementsFile,
-    exportConfig: onnxExportConfig
-  }
-}
-
-function onnxModelNeedsExport(payload) {
-  if (!existsSync(sourceOnnxModelPath)) {
-    return true
-  }
-
-  const stamp = readJsonFile(onnxExportStampPath)
-  return JSON.stringify(stamp) !== JSON.stringify(payload)
-}
-
-function exportOnnxModel(python) {
-  const exportScript = `
-import shutil
-import sys
-import json
-from pathlib import Path
-
-from ultralytics import YOLO
-
-source = Path(sys.argv[1]).resolve()
-target = Path(sys.argv[2]).resolve()
-imgsz = json.loads(sys.argv[3])
-opset = int(sys.argv[4])
-dynamic = sys.argv[5] == "1"
-simplify = sys.argv[6] == "1"
-half = sys.argv[7] == "1"
-nms = sys.argv[8] == "1"
-
-model = YOLO(str(source))
-exported = model.export(
-    format="onnx",
-    imgsz=imgsz,
-    opset=opset,
-    dynamic=dynamic,
-    simplify=simplify,
-    half=half,
-    nms=nms,
-    device="cpu",
-)
-exported_path = Path(exported).resolve()
-target.parent.mkdir(parents=True, exist_ok=True)
-if exported_path != target:
-    shutil.copy2(exported_path, target)
-print(f"ONNX export ready: {target}")
-`
-
-  runCommand(
-    python,
-    [
-      '-c',
-      exportScript,
-      sourcePtModelPath,
-      sourceOnnxModelPath,
-      JSON.stringify(onnxExportConfig.imgsz),
-      String(onnxExportConfig.opset),
-      boolArg(onnxExportConfig.dynamic),
-      boolArg(onnxExportConfig.simplify),
-      boolArg(onnxExportConfig.half),
-      boolArg(onnxExportConfig.nms)
-    ],
-    {
-      cwd: aiDir,
-      env: workerPythonEnv()
-    }
-  )
-}
-
-function verifyOnnxModel(python, requirementsFile) {
-  const smokeScript = `
-import json
-import sys
-
-import numpy as np
-import onnxruntime as ort
-
-try:
-    import torch  # noqa: F401
-except Exception:
-    pass
-
-try:
-    ort.preload_dlls()
-except AttributeError:
-    pass
-
-model_path = sys.argv[1]
-require_cuda = sys.argv[2] == "1"
-fallback_shape = json.loads(sys.argv[3])
-available_providers = ort.get_available_providers()
-
-if require_cuda and "CUDAExecutionProvider" not in available_providers:
-    raise SystemExit(f"CUDAExecutionProvider unavailable: {available_providers}")
-
-providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if "CUDAExecutionProvider" in available_providers else ["CPUExecutionProvider"]
-session = ort.InferenceSession(model_path, providers=providers)
-active_providers = session.get_providers()
-
-if require_cuda and "CUDAExecutionProvider" not in active_providers:
-    raise SystemExit(f"CUDAExecutionProvider not active: {active_providers}")
-
-input_meta = session.get_inputs()[0]
-shape = []
-for index, dim in enumerate(input_meta.shape):
-    if isinstance(dim, int) and dim > 0:
-        shape.append(dim)
-    elif index == 0:
-        shape.append(1)
-    elif index == 1:
-        shape.append(3)
-    else:
-        shape.append(int(fallback_shape[index - 2]))
-
-dummy = np.zeros(tuple(shape), dtype=np.float32)
-outputs = session.run(None, {input_meta.name: dummy})
-print(json.dumps({
-    "availableProviders": available_providers,
-    "activeProviders": active_providers,
-    "inputName": input_meta.name,
-    "inputShape": shape,
-    "outputShapes": [list(output.shape) for output in outputs],
-}, ensure_ascii=False))
-`
-
-  runCommand(
-    python,
-    [
-      '-c',
-      smokeScript,
-      sourceOnnxModelPath,
-      boolArg(requireOnnxCudaProvider(requirementsFile)),
-      JSON.stringify(Array.isArray(onnxExportConfig.imgsz) ? onnxExportConfig.imgsz : [onnxExportConfig.imgsz, onnxExportConfig.imgsz])
-    ],
-    {
-      cwd: aiDir,
-      env: workerPythonEnv()
-    }
-  )
-}
-
-function ensureOnnxModel({ python, pythonIdentity, requirementsFile }) {
-  validateOnnxExportConfig()
-
-  if (!existsSync(sourcePtModelPath)) {
-    throw new Error(`缺少 ONNX 导出源模型: ${sourcePtModelPath}`)
-  }
-
-  const payload = onnxStampPayload({ pythonIdentity, requirementsFile })
-  if (onnxModelNeedsExport(payload)) {
-    exportOnnxModel(python)
-  }
-
-  verifyOnnxModel(python, requirementsFile)
-  writeFileSync(onnxExportStampPath, JSON.stringify(payload, null, 2))
 }
 
 function resolveWhich(binary) {
@@ -618,7 +387,7 @@ function modulesReady(python) {
     python,
     [
       '-c',
-      'import PyInstaller, cv2, torch, ultralytics, dotenv, numpy, scipy, PIL, onnx, onnxruntime'
+      'import PyInstaller, cv2, dotenv, numpy'
     ],
     {
       stdio: 'pipe',
@@ -658,7 +427,7 @@ function ensureNoBackportPathlib(python) {
 function latestWorkerSourceMtime(root) {
   let latest = 0
   const ignoredDirs = new Set(['__pycache__', 'logs', 'storage'])
-  const includedExtensions = new Set(['.py', '.yaml', '.yml', '.pt', '.json'])
+  const includedExtensions = new Set(['.py', '.yaml', '.yml', '.json'])
 
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const fullPath = join(root, entry.name)
@@ -744,7 +513,7 @@ function ensureBuildPython(requirementsFile = resolveRequirementsFile()) {
   }
 
   const condaPython = resolveCondaPythonPath(condaEnvName)
-  if (condaPython && existsSync(condaPython)) {
+  if (process.env.TAURI_WORKER_USE_CONDA === '1' && condaPython && existsSync(condaPython)) {
     return ensurePythonDependencies({
       python: condaPython,
       requirementsFile,
@@ -753,9 +522,17 @@ function ensureBuildPython(requirementsFile = resolveRequirementsFile()) {
     })
   }
 
-  const pythonCommand = resolvePythonCommand()
   const { python } = resolveVenvPaths()
   const stampPath = join(workerVenvDir, '.desktop-worker-ready.json')
+  const venvExists = existsSync(python)
+  const pythonCommand = venvExists
+    ? null
+    : requireCommand('python', ['--version'])
+      ? 'python'
+      : condaPython && existsSync(condaPython)
+        ? condaPython
+        : resolvePythonCommand()
+  const pythonIdentity = pythonCommand ? `venv:${pythonCommand}` : `venv:${python}`
 
   let stamp = null
   if (existsSync(stampPath)) {
@@ -766,7 +543,7 @@ function ensureBuildPython(requirementsFile = resolveRequirementsFile()) {
     }
   }
 
-  if (stamp?.pythonIdentity && stamp.pythonIdentity !== `venv:${pythonCommand}`) {
+  if (pythonCommand && stamp?.pythonIdentity && stamp.pythonIdentity !== pythonIdentity) {
     rmSync(workerVenvDir, { recursive: true, force: true })
   }
 
@@ -778,7 +555,7 @@ function ensureBuildPython(requirementsFile = resolveRequirementsFile()) {
     python,
     requirementsFile,
     stampPath,
-    pythonIdentity: `venv:${pythonCommand}`
+    pythonIdentity
   })
 }
 
@@ -849,7 +626,6 @@ function buildWorker(buildContext = null) {
 
 function copyRuntimeResources() {
   rmSync(modelResourcesDir, { recursive: true, force: true })
-  rmSync(toolResourcesDir, { recursive: true, force: true })
   rmSync(legacyBinResourcesDir, { recursive: true, force: true })
   rmSync(legacyWorkerResourcesDir, { recursive: true, force: true })
   ensureDir(modelResourcesDir)
@@ -857,10 +633,52 @@ function copyRuntimeResources() {
 
   const ffmpegBinaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
   const ffprobeBinaryName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
+  const ffmpegRuntimeDlls = [
+    'aom.dll',
+    'avcodec-60.dll',
+    'avdevice-60.dll',
+    'avfilter-9.dll',
+    'avformat-60.dll',
+    'avutil-58.dll',
+    'charset.dll',
+    'dav1d.dll',
+    'fontconfig-1.dll',
+    'freetype.dll',
+    'fribidi-0.dll',
+    'gmp.dll',
+    'harfbuzz.dll',
+    'iconv.dll',
+    'intl-8.dll',
+    'jpeg8.dll',
+    'libbz2.dll',
+    'libcrypto-3-x64.dll',
+    'libexpat.dll',
+    'liblzma.dll',
+    'libssl-3-x64.dll',
+    'libxml2.dll',
+    'openh264-7.dll',
+    'openjp2.dll',
+    'opus.dll',
+    'SvtAv1Enc.dll',
+    'swresample-4.dll',
+    'swscale-7.dll',
+    'theora.dll',
+    'theoradec.dll',
+    'theoraenc.dll',
+    'vorbis.dll',
+    'vorbisenc.dll',
+    'vorbisfile.dll',
+    'zlib.dll',
+    'zstd.dll'
+  ]
+
+  if (!existsSync(sourceOnnxModelPath)) {
+    throw new Error(`缺少 ONNX 模型: ${sourceOnnxModelPath}。请先运行 npm run desktop:export-onnx`)
+  }
 
   copyFileIfExists(sourceOnnxModelPath, modelResourcesDir, 'best.onnx')
-  copyWindowsToolRuntime(resolveRuntimeTool('ffmpeg'), toolResourcesDir, ffmpegBinaryName)
-  copyWindowsToolRuntime(resolveRuntimeTool('ffprobe'), toolResourcesDir, ffprobeBinaryName)
+  copyWindowsToolRuntime(resolveRuntimeTool('ffmpeg'), toolResourcesDir, ffmpegBinaryName, ffmpegRuntimeDlls)
+  copyWindowsToolRuntime(resolveRuntimeTool('ffprobe'), toolResourcesDir, ffprobeBinaryName, ffmpegRuntimeDlls)
   normalizeBundledResource(toolResourcesDir)
 }
 
@@ -871,7 +689,6 @@ function main() {
     requirementsFile
   }
 
-  ensureOnnxModel(buildContext)
   copyRuntimeResources()
   buildWorker(buildContext)
   console.log('桌面 worker 和运行资源已更新到 src-tauri/resources')

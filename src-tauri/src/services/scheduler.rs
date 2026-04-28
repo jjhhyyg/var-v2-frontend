@@ -214,6 +214,7 @@ pub(crate) fn spawn_task_execution(state: DesktopState, app: AppHandle, task_id:
     std::thread::spawn(move || {
         let result = run_task_worker(&state, &app, task_id);
         if let Err(error) = result {
+            backend_log_error(format!("task {task_id} worker execution failed: {error:#}"));
             let _ = mark_task_failed(&state, &app, task_id, &error.to_string());
         }
 
@@ -262,6 +263,18 @@ pub(crate) fn enqueue_tasks(
 
     {
         let _guard = state.runtime.scheduler_lock.lock();
+        let runtime_state = runtime_state_response(state);
+        if runtime_state.runtime_required && !runtime_state.runtime_ready {
+            state.emit_scheduler_state(app);
+            state.emit_resource_state(app);
+            return Err(anyhow!(
+                "算法包不可用，请先成功导入匹配版本的算法包: {}",
+                runtime_state
+                    .runtime_error
+                    .unwrap_or_else(|| "未知错误".to_string())
+            ));
+        }
+
         let conn = state.open_db()?;
         let mut next_order = next_queue_order(&conn)?;
         for task_id in task_ids {
@@ -282,10 +295,29 @@ pub(crate) fn enqueue_tasks(
             )?;
             next_order += 1;
         }
-    }
 
-    try_schedule_tasks(state, app)?;
+        if let Err(error) = try_schedule_tasks_locked(state, app) {
+            rollback_queued_tasks(&conn, task_ids)?;
+            emit_queue_updates(state, app)?;
+            state.emit_scheduler_state(app);
+            state.emit_resource_state(app);
+            return Err(error).context("任务加入队列后调度失败，已恢复为待启动状态");
+        }
+    }
     Ok(task_ids.to_vec())
+}
+
+fn rollback_queued_tasks(conn: &Connection, task_ids: &[i64]) -> anyhow::Result<()> {
+    for task_id in task_ids {
+        conn.execute(
+            "UPDATE analysis_tasks
+             SET status = 'PENDING',
+                 queue_order = NULL
+             WHERE id = ?1 AND status = 'QUEUED'",
+            params![task_id],
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

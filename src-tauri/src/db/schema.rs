@@ -37,7 +37,6 @@ pub(crate) fn init_db(db_path: &Path, backup_dir: &Path) -> anyhow::Result<()> {
           original_filename TEXT,
           original_video_rel_path TEXT NOT NULL,
           analysis_input_rel_path TEXT,
-          result_video_rel_path TEXT,
           preprocessed_video_rel_path TEXT,
           video_duration INTEGER NOT NULL,
           status TEXT NOT NULL,
@@ -103,6 +102,7 @@ pub(crate) fn init_db(db_path: &Path, backup_dir: &Path) -> anyhow::Result<()> {
 
 pub(crate) fn open_db(db_path: &Path) -> anyhow::Result<Connection> {
     let conn = Connection::open(db_path)?;
+    conn.busy_timeout(Duration::from_secs(10))?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     Ok(conn)

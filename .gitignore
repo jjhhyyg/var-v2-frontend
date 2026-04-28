@@ -34,5 +34,8 @@ pnpm-lock.yaml
 # Generated desktop packaging resources.
 # Recreated by `npm run desktop:build-worker`.
 .windows-runtime-package/
-src-tauri/resources/runtime/
+src-tauri/resources/runtime/*
+!src-tauri/resources/runtime/windows-x64/
+src-tauri/resources/runtime/windows-x64/*
+!src-tauri/resources/runtime/windows-x64/runtime-package-lock.json
 src-tauri/resources/models/
